@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include "cpu.h"
 
 typedef struct Bus {
     int (*read)(struct Bus* bus, uint32_t address, void* buff, uint32_t n);
@@ -14,20 +13,27 @@ typedef struct {
 } MMEntry;
 
 #define MAINBUS_MAX_ENTRIES 16
-typedef struct {
+typedef struct MainBus {
     Bus _Bus;
-    CPU* cpu;
+    struct CPU* cpu;
+    struct DebugModule* dbg;
     MMEntry entries[MAINBUS_MAX_ENTRIES];
     int count;
 } MainBus;
 
+typedef enum {
+    DEV_SRAM,
+    DEV_SERIAL
+} DeviceType;
+
 typedef struct BusDevice {
     Bus _Bus;
     MainBus* _MainBus;
+    DeviceType type;
 } BusDevice;
 
 void MainBus_init(MainBus* bus);
 void MainBus_addDevice(MainBus* bus, BusDevice* dev, uint32_t base, uint32_t size);
-
+BusDevice* MainBus_getDevice(MainBus* bus, uint32_t address);
 
 

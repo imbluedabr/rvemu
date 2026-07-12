@@ -24,6 +24,7 @@ void SRAM_init(SRAM* sram, MainBus* _MainBus, int size) {
     sram->_BusDevice._MainBus = _MainBus;
     sram->_BusDevice._Bus.read = SRAM_read;
     sram->_BusDevice._Bus.write = SRAM_write;
+    sram->_BusDevice.type = DEV_SRAM;
     sram->base = malloc(size);
     sram->size = size;
 }

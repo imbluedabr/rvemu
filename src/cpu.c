@@ -1,5 +1,6 @@
 #include "cpu.h"
 #include "bus.h"
+#include "debug.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -70,9 +71,13 @@ static inline uint32_t csr_read(CPU* cpu, uint32_t csr) {
 }
 
 void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval) {
-    cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
-    cpu->csr_mtval = mtval;
-    cpu->trap_pending = 1;
+    if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
+        DebugModule_sendHalt(cpu->system_bus->dbg, 2);
+    } else {
+        cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
+        cpu->csr_mtval = mtval;
+        cpu->trap_pending = 1;
+    }
 }
 
 void CPU_interrupt_fast(CPU* cpu, uint8_t irq) {
@@ -89,22 +94,55 @@ void CPU_iret(CPU* cpu) {
     cpu->pc = cpu->csr_mepc;
 }
 
-#define ABORT_INSTR(CPUPTR, CAUSE, MTVAL) { CPU_exception(CPUPTR, CAUSE, MTVAL); goto abort; }
+void CPU_handleTrap(CPU* cpu) {
+    Bus* bus = &cpu->system_bus->_Bus;
+
+    if (cpu->mode == MODE_D) return;
+
+    if (cpu->csr_mstatus & MSTATUS_MIE(1))
+        cpu->csr_mstatus |= MSTATUS_MPIE(1);
+    cpu->csr_mstatus &= ~MSTATUS_MIE(1);
+    cpu->csr_mstatus &= ~MSTATUS_MPRV(1);
+    cpu->csr_mstatus |= MSTATUS_MPRV(cpu->mode);
+
+    cpu->csr_mepc = cpu->pc;
+    uint32_t temp;
+    if (bus->read(bus, cpu->csr_mtvec, &temp, 4) < 0) {
+        CPU_exception(cpu, FAULT_LACCESS, cpu->csr_mtvec);
+    }
+
+    cpu->pc = temp;
+    return;
+}
 
 void CPU_tick(CPU* cpu) {
     if (cpu->mode == MODE_D) return;
-    Bus* bus = cpu->system_bus;
+    Bus* bus = &cpu->system_bus->_Bus;
     uint32_t instruction;
     uint32_t pc = cpu->pc;
     uint32_t temp;
     uint8_t byte;
     uint16_t halfword;
     cpu->registers[0] = 0; //force x0 to zero
-    
+
+    //interrupt handeling
+    if (cpu->trap_pending) {
+        cpu->trap_pending = 0;
+        CPU_handleTrap(cpu);
+    } else {
+        for (int i = 0; i < 16; i++) {
+            if (cpu->csr_mip & (1 << i)) {
+                cpu->csr_mip &= ~(1 << i);
+                CPU_handleTrap(cpu);
+                break;
+            }
+        }
+    }
+
     //fetch
     if (bus->read(bus, pc, &instruction, 4) < 0) {
         CPU_exception(cpu, FAULT_IACCESS, pc);
-        goto abort;
+        return;
     }
     
     //decode
@@ -217,7 +255,11 @@ void CPU_tick(CPU* cpu) {
                             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
                         }
                     } else if (rs2 == 1) { //EBREAK
-                        CPU_exception(cpu, FAULT_DEBUG, 0);
+                        if (cpu->csr_dcsr & DCSR_EBREAK(1)) {
+                            DebugModule_sendHalt(cpu->system_bus->dbg, 1);
+                        } else {
+                            CPU_exception(cpu, FAULT_DEBUG, 0);
+                        }
                     } else if (rs2 == 2) { //MRET
                         if (cpu->mode != MODE_M) {
                             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
@@ -334,42 +376,7 @@ void CPU_tick(CPU* cpu) {
         default:
             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
     }
-
-abort:
-    if (cpu->trap_pending) {
-        cpu->trap_pending = 0;
-        goto trap;
-    }
-
-    for (int i = 0; i < 16; i++) {
-        if (cpu->csr_mip & (1 << i)) {
-            cpu->csr_mip &= ~(1 << i);
-            goto trap;
-        }
-    }
     cpu->pc = pc;
-    return;
-
-trap:
-    goto debug;
-    if (cpu->csr_mstatus & MSTATUS_MIE(1))
-        cpu->csr_mstatus |= MSTATUS_MPIE(1);
-    cpu->csr_mstatus &= ~MSTATUS_MIE(1);
-    cpu->csr_mstatus &= ~MSTATUS_MPRV(1);
-    cpu->csr_mstatus |= MSTATUS_MPRV(cpu->mode);
-
-    cpu->csr_mepc = pc;
-    if (bus->read(bus, cpu->csr_mtvec, &temp, 4) < 0) {
-        CPU_exception(cpu, FAULT_LACCESS, cpu->csr_mtvec);
-        goto debug;
-    }
-
-    cpu->pc = temp;
-    return;
-
-debug:
-    cpu->csr_dpc = pc;
-    cpu->mode = MODE_D;
 }
 
 

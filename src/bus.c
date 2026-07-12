@@ -1,5 +1,6 @@
 #include "bus.h"
 #include "cpu.h"
+#include <stddef.h>
 
 static int read(struct Bus* bus, uint32_t address, void* buff, uint32_t n) {
     MainBus* mbus = (MainBus*) bus;
@@ -39,5 +40,15 @@ void MainBus_addDevice(MainBus* bus, BusDevice* dev, uint32_t base, uint32_t siz
     entry->size = size;
 }
 
+BusDevice* MainBus_getDevice(MainBus* bus, uint32_t address) {
+    for (int i = 0; i < bus->count; i++) {
+        MMEntry* entry = &bus->entries[i];
+        if (entry->base <= address && (entry->base + entry->size) > (address)) {
+            return entry->dev;
+        }
+    }
+    
+    return NULL;
+}
 
 

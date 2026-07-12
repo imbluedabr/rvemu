@@ -35,8 +35,13 @@
 #define MIP_MTIP(X) (X << 7)
 #define MIP_MSIP(X) (X << 3)
 
+#define DCSR_CAUSE(X) ((X & 0x3) << 6)
+#define DCSR_CAUSE_MSK 0x3
+#define DCSR_GETCAUSE(X) ((X >> 6) & 0x3)
+#define DCSR_EBREAK(X) (X << 15)
+#define DCSR_VCATCH(X) (X << 16)
 
-typedef struct {
+typedef struct CPU {
     uint32_t registers[32];
     uint32_t pc;
     uint8_t trap_pending;
@@ -55,7 +60,7 @@ typedef struct {
     uint32_t csr_dcsr;
     uint32_t csr_dpc;
 
-    struct Bus* system_bus;
+    struct MainBus* system_bus;
 } CPU;
 
 void CPU_init(CPU* cpu);

@@ -6,7 +6,7 @@
 #include "debug.h"
 
 int main(int argc, char** argv) {
-    printf("rvemu v0.1.0\n");
+    printf("rvemu v0.1.1\n");
     
     CPU hart0;
     CPU_init(&hart0);
@@ -14,22 +14,26 @@ int main(int argc, char** argv) {
     MainBus systemBus;
     MainBus_init(&systemBus);
     systemBus.cpu = &hart0;
-    hart0.system_bus = &systemBus._Bus;
+    hart0.system_bus = &systemBus;
     
     DebugModule debug;
     DebugModule_init(&debug, &systemBus);
+    systemBus.dbg = &debug;
 
     SRAM sram0;
     SRAM_init(&sram0, &systemBus, 0x1000);
-    SRAM_loadFile(&sram0, "./test/test.bin", 0, 0x1000);
     MainBus_addDevice(&systemBus, &sram0._BusDevice, 0x0000, 0x1000);
     
     SimpleUART uart0;
     SimpleUART_init(&uart0, &systemBus);
     MainBus_addDevice(&systemBus, &uart0._BusDevice, 0x8000, 0x10);
 
+    DebugModule_sendCmd(&debug, DBG_LOAD, "./test/test.bin", 0x0000, 0x1000);
+    DebugModule_sendCmd(&debug, DBG_CATCH_EBREAK);
+    DebugModule_sendCmd(&debug, DBG_CATCH_VEC);
+
     while (debug.running) {
-        for (int i = 0; i < 1000; i++) CPU_tick(&hart0);
+        CPU_tick(&hart0);
         SimpleUART_tick(&uart0);
         DebugModule_tick(&debug);
     }
