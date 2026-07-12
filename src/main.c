@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "cpu.h"
 #include "bus.h"
-#include "mmio.h"
+#include "uart.h"
 #include "mem.h"
 #include "debug.h"
 
@@ -29,8 +29,10 @@ int main(int argc, char** argv) {
     MainBus_addDevice(&systemBus, &uart0._BusDevice, 0x8000, 0x10);
 
     DebugModule_sendCmd(&debug, DBG_LOAD, "./test/test.bin", 0x0000, 0x1000);
+    DebugModule_sendCmd(&debug, DBG_FILE, "./test/test.elf");
     DebugModule_sendCmd(&debug, DBG_CATCH_EBREAK);
     DebugModule_sendCmd(&debug, DBG_CATCH_VEC);
+    DebugModule_sendCmd(&debug, DBG_HALT);
 
     while (debug.running) {
         CPU_tick(&hart0);

@@ -40,11 +40,11 @@ void MainBus_addDevice(MainBus* bus, BusDevice* dev, uint32_t base, uint32_t siz
     entry->size = size;
 }
 
-BusDevice* MainBus_getDevice(MainBus* bus, uint32_t address) {
+MMEntry* MainBus_getMMEntry(MainBus* bus, uint32_t address) {
     for (int i = 0; i < bus->count; i++) {
         MMEntry* entry = &bus->entries[i];
         if (entry->base <= address && (entry->base + entry->size) > (address)) {
-            return entry->dev;
+            return entry;
         }
     }
     

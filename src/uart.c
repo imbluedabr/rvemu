@@ -1,16 +1,27 @@
-#include "mmio.h"
+#include "uart.h"
 #include "debug.h"
 #include <unistd.h>
 #include <sys/fcntl.h>
 
 static int SimpleUART_read(struct Bus* bus, uint32_t address, void* buff, uint32_t n) {
     SimpleUART* uart = (SimpleUART*) bus;
-    if (address == 0x00 && n == 1) {
+    if (address == 0x00 && n == 1) { //DATA register
         uint8_t temp = uart->rx_tail;
         if (temp != uart->tx_head) {
             uart->rx_tail = (temp + 1) & RXMASK;
-            return uart->rxbuff[temp];
+            *(char*) buff = uart->rxbuff[temp];
+            return 0;
         }
+    } else if (address == 0x01 && n == 1) { //CSR
+        uint8_t csr = 0;
+        if (uart->rx_tail != uart->tx_head) {
+            csr |= UART_RXAVAIL;
+        }
+        if (((uart->tx_head + 1) & TXMASK) == uart->tx_tail) {
+            csr |= UART_TXFULL;
+        }
+        *(uint8_t*) buff = csr;
+        return 0;
     }
     return -1;
 }
@@ -24,6 +35,8 @@ static int SimpleUART_write(struct Bus* bus, uint32_t address, void* buff, uint3
             uart->txbuff[temp] = *(char*) buff;
             return 0;
         }
+    } else if (address == 0x01 && n == 1) {
+        return 0;
     }
     return -1;
 }

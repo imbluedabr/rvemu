@@ -34,6 +34,6 @@ typedef struct BusDevice {
 
 void MainBus_init(MainBus* bus);
 void MainBus_addDevice(MainBus* bus, BusDevice* dev, uint32_t base, uint32_t size);
-BusDevice* MainBus_getDevice(MainBus* bus, uint32_t address);
+MMEntry* MainBus_getMMEntry(MainBus* bus, uint32_t address);
 
 

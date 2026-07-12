@@ -36,8 +36,8 @@ void SRAM_loadFile(SRAM* sram, const char* path, uint32_t start, uint32_t size) 
         return;
     }
     
-    if (size > sram->size) size = sram->size;
-    read(fd, sram->base, size);
+    if ((size + start) > sram->size) size = sram->size;
+    read(fd, sram->base + start, size);
     close(fd);
 }
 

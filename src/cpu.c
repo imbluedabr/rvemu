@@ -16,6 +16,7 @@ static inline void csr_write(CPU* cpu, uint32_t csr, uint32_t val) {
             break;
         case 0x301: //misa
             cpu->csr_misa = val;
+            break;
         case 0x304: //mie
             cpu->csr_mie = val;
             break;
@@ -73,11 +74,10 @@ static inline uint32_t csr_read(CPU* cpu, uint32_t csr) {
 void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval) {
     if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
         DebugModule_sendHalt(cpu->system_bus->dbg, 2);
-    } else {
-        cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
-        cpu->csr_mtval = mtval;
-        cpu->trap_pending = 1;
     }
+    cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
+    cpu->csr_mtval = mtval;
+    cpu->trap_pending = 1;
 }
 
 void CPU_interrupt_fast(CPU* cpu, uint8_t irq) {
@@ -267,6 +267,7 @@ void CPU_tick(CPU* cpu) {
                             CPU_iret(cpu);
                         }
                     }
+                    break;
                 case 0b001: //CSRRW
                     csr_write(cpu, i_imm, cpu->registers[rs1]);
                     pc += 4;

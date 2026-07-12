@@ -3,7 +3,7 @@ SRCS = $(wildcard ./src/*.c)
 
 OBJS = $(SRCS:%.c=%.o)
 
-CFLAGS = -Os -flto
+CFLAGS = -Wall -Wextra -Os -flto
 LDFLAGS = -flto
 
 %.o: %.c

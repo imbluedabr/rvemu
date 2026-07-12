@@ -4,11 +4,14 @@
 typedef struct DebugModule {
     MainBus* systemBus;
     int running;
+    char file[256];
 } DebugModule;
 
 typedef enum {
     DBG_HALT,
     DBG_LOAD,
+    DBG_FILE,
+    DBG_INFO,
     DBG_CATCH_VEC,
     DBG_CATCH_EBREAK,
     DBG_CONTINUE

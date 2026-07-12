@@ -6,6 +6,8 @@
 #define TXSIZE 16
 #define RXMASK (RXSIZE-1)
 #define TXMASK (TXSIZE-1)
+#define UART_RXAVAIL (1 << 0)
+#define UART_TXFULL (1 << 1)
 typedef struct {
     BusDevice _BusDevice;
     struct termios oldt;
