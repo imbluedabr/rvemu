@@ -4,12 +4,20 @@
 .org 0x0000
 
 _start:
-    nop
+    #set the trap vector
+    la t0, trap_handler
+    csrw mtvec, t0
     
     #print(hello_str)
-    li a0, %lo(hello_str)
+    la a0, hello_str
     call print
 
+    ecall
+
+
+trap_handler:
+    la a0, trap_str
+    call print
     ebreak
 
 # void print(char* str)
@@ -30,4 +38,7 @@ print_exit:
 
 hello_str:
     .asciz "Hello world!\r\n\0"
+
+trap_str:
+    .asciz "Hello from the ecall handler!\r\n\0"
 

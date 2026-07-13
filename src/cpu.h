@@ -14,6 +14,7 @@
 #define FAULT_MCALL 11
 
 #define MSTATUS_MPRV(X) (((X) & 0x3) << 17)
+#define MSTATUS_MPRV_MSK (0x3 << 17)
 #define MSTATUS_GETMPRV(X) (((X) >> 17) & 0x3)
 #define MSTATUS_MPP(X) (X << 11)
 #define MSTATUS_MPIE(X) (X << 7)
@@ -36,7 +37,7 @@
 #define MIP_MSIP(X) (X << 3)
 
 #define DCSR_CAUSE(X) (((X) & 0x3) << 6)
-#define DCSR_CAUSE_MSK 0x3
+#define DCSR_CAUSE_MSK (0x3 << 6)
 #define DCSR_GETCAUSE(X) (((X) >> 6) & 0x3)
 #define DCSR_EBREAK(X) (X << 15)
 #define DCSR_VCATCH(X) (X << 16)

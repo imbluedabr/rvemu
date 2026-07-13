@@ -16,12 +16,12 @@ void DebugModule_init(DebugModule* dbg, MainBus* systemBus) {
 }
 
 void DebugModule_sendHalt(DebugModule* dbg, int cause) {
-    printf("rvemu: halting core\r\n");
     CPU* cpu = dbg->systemBus->cpu;
     cpu->mode = MODE_D;
     cpu->csr_dpc = cpu->pc;
     cpu->csr_dcsr &= ~DCSR_CAUSE_MSK;
     cpu->csr_dcsr |= DCSR_CAUSE(cause);
+    printf("rvemu: halting core\r\n");
 }
 
 void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
@@ -60,6 +60,7 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
             printf("registers: ");
             for (int i = 1; i < 32; i++) printf("x%d=%d, ", i, cpu->registers[i]);
             printf("pc=%d\r\n", cpu->pc);
+            printf("csr: mstatus=%d, mtvec=%d, mepc=%d, mcause=%d\n", cpu->csr_mstatus, cpu->csr_mtvec, cpu->csr_mepc, cpu->csr_mcause);
             break;
         case DBG_CATCH_VEC:
             cpu->csr_dcsr |= DCSR_VCATCH(1);

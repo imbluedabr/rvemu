@@ -95,31 +95,24 @@ void CPU_iret(CPU* cpu) {
 }
 
 void CPU_handleTrap(CPU* cpu) {
-    Bus* bus = &cpu->system_bus->_Bus;
-
-    if (cpu->mode == MODE_D) return;
 
     if (cpu->csr_mstatus & MSTATUS_MIE(1))
         cpu->csr_mstatus |= MSTATUS_MPIE(1);
     cpu->csr_mstatus &= ~MSTATUS_MIE(1);
-    cpu->csr_mstatus &= ~MSTATUS_MPRV(1);
+    cpu->csr_mstatus &= ~MSTATUS_MPRV_MSK;
     cpu->csr_mstatus |= MSTATUS_MPRV(cpu->mode);
 
     cpu->csr_mepc = cpu->pc;
-    uint32_t temp;
-    if (bus->read(bus, cpu->csr_mtvec, &temp, 4) < 0) {
-        CPU_exception(cpu, FAULT_LACCESS, cpu->csr_mtvec);
-    }
-
-    cpu->pc = temp;
+    cpu->pc = cpu->csr_mtvec;
     return;
 }
+
+#define SEXT(VAL, N) (VAL | ((VAL & (1 << N)) ? (~((1 << N) - 1)) : 0x0))
 
 void CPU_tick(CPU* cpu) {
     if (cpu->mode == MODE_D) return;
     Bus* bus = &cpu->system_bus->_Bus;
     uint32_t instruction;
-    uint32_t pc = cpu->pc;
     uint32_t temp;
     uint8_t byte;
     uint16_t halfword;
@@ -139,6 +132,7 @@ void CPU_tick(CPU* cpu) {
         }
     }
 
+    uint32_t pc = cpu->pc;
     //fetch
     if (bus->read(bus, pc, &instruction, 4) < 0) {
         CPU_exception(cpu, FAULT_IACCESS, pc);
@@ -171,19 +165,19 @@ void CPU_tick(CPU* cpu) {
         case 0b0010011:
             switch (funct3) {
                 case 0b000: //ADDI
-                    cpu->registers[rd] = cpu->registers[rs1] + (int) i_imm;
+                    cpu->registers[rd] = cpu->registers[rs1] + (int) SEXT(i_imm, 11);
                     break;
                 case 0b001: //SLLI
                     cpu->registers[rd] = cpu->registers[rs1] << (i_imm & 0x1F);
                     break;
                 case 0b010: //SLTI
-                    cpu->registers[rd] = ((int) cpu->registers[rs1]) < (int) i_imm;
+                    cpu->registers[rd] = ((int) cpu->registers[rs1]) < (int) SEXT(i_imm, 11);
                     break;
                 case 0b011: //SLTIU
                     cpu->registers[rd] = cpu->registers[rs1] < i_imm;
                     break;
                 case 0b100: //XORI
-                    cpu->registers[rd] = cpu->registers[rs1] ^ (int) i_imm;
+                    cpu->registers[rd] = cpu->registers[rs1] ^ (int) SEXT(i_imm, 11);
                     break;
                 case 0b101: //SRAI, SRLI
                     if (i_imm & 0x400) {
@@ -193,10 +187,10 @@ void CPU_tick(CPU* cpu) {
                     }
                     break;
                 case 0b110: //ORI
-                    cpu->registers[rd] = cpu->registers[rs1] | (int) i_imm;
+                    cpu->registers[rd] = cpu->registers[rs1] | (int) SEXT(i_imm, 11);
                     break;
                 case 0b111: //ANDI
-                    cpu->registers[rd] = cpu->registers[rs1] & (int) i_imm;
+                    cpu->registers[rd] = cpu->registers[rs1] & (int) SEXT(i_imm, 11);
                     break;
             }
             pc += 4;
@@ -324,13 +318,13 @@ void CPU_tick(CPU* cpu) {
         case 0b0100011:
             switch (funct3) {
                 case 0b000: //SB
-                    bus->write(bus, cpu->registers[rs1] + (int) s_imm, &cpu->registers[rs2], 1);
+                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 1);
                     break;
                 case 0b001: //SH
-                    bus->write(bus, cpu->registers[rs1] + (int) s_imm, &cpu->registers[rs2], 2);
+                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 2);
                     break;
                 case 0b010: //SW
-                    bus->write(bus, cpu->registers[rs1] + (int) s_imm, &cpu->registers[rs2], 1);
+                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 1);
                     break;
             }
             pc += 4;
@@ -339,13 +333,12 @@ void CPU_tick(CPU* cpu) {
         case 0b1101111: //JAL
             cpu->registers[rd] = pc + 4;
             temp = ((instruction & 0xFF000) | ((instruction & 0x7FE00000) >> 20) | ((instruction & 0x80000000) >> 11) | ((instruction & 0x100000) >> 9));
-            if (temp & (1 << 20)) temp |= 0xFFE00000;
-            pc += temp;
+            pc += (int) SEXT(temp, 19);
             break;
 
         case 0b1100111: //JALR
             cpu->registers[rd] = pc + 4;
-            temp = cpu->registers[rs1] + (int) i_imm;
+            temp = cpu->registers[rs1] + (int) SEXT(i_imm, 11);
             pc = temp & ~1;
             break;
 
