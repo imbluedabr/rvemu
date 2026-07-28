@@ -1,8 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-#define MODE_M 0
-#define MODE_U 1
+#define MODE_M 3
+#define MODE_U 0
 #define MODE_D 2
 
 #define FAULT_IACCESS 1
@@ -14,9 +14,9 @@
 #define FAULT_MCALL 11
 
 #define MSTATUS_MPRV(X) (((X) & 0x3) << 17)
-#define MSTATUS_MPRV_MSK (0x3 << 17)
-#define MSTATUS_GETMPRV(X) (((X) >> 17) & 0x3)
-#define MSTATUS_MPP(X) (X << 11)
+#define MSTATUS_MPP(X) (((X) & 0x3) << 11)
+#define MSTATUS_MPP_MSK (0x3 << 11)
+#define MSTATUS_GETMPP(X) (((X) >> 11) & 0x3)
 #define MSTATUS_MPIE(X) (X << 7)
 #define MSTATUS_MIE(X) (X << 3)
 
@@ -41,6 +41,10 @@
 #define DCSR_GETCAUSE(X) (((X) >> 6) & 0x3)
 #define DCSR_EBREAK(X) (X << 15)
 #define DCSR_VCATCH(X) (X << 16)
+#define DCSR_STEP(X) ((X) << 2)
+#define DCSR_PRV(X) ((X) & 0x3)
+#define DCSR_PRV_MSK 0x3
+#define DCSR_GETPRV(X) ((X) & 0x3)
 
 typedef struct CPU {
     uint32_t registers[32];

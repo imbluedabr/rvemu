@@ -70,7 +70,7 @@ void SimpleUART_tick(SimpleUART* uart) {
     uint8_t tmp;
     if (read(STDIN_FILENO, &buff, 1) > 0) {
         if (buff == 0x17) { //CTRL+W
-            DebugModule_sendHalt(uart->_BusDevice._MainBus->dbg, 3);
+            DebugModule_sendHalt(uart->_BusDevice._MainBus->dbg, 2);
             return;
         }
         

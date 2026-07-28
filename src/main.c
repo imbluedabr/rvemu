@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     DebugModule_sendCmd(&debug, DBG_LOAD, "./test/test.bin", 0x0000, 0x1000);
     DebugModule_sendCmd(&debug, DBG_FILE, "./test/test.elf");
     DebugModule_sendCmd(&debug, DBG_CATCH_EBREAK);
-    DebugModule_sendCmd(&debug, DBG_CATCH_VEC);
+    //DebugModule_sendCmd(&debug, DBG_CATCH_VEC);
     DebugModule_sendCmd(&debug, DBG_HALT);
 
     while (debug.running) {

@@ -9,18 +9,98 @@
 #include <unistd.h>
 #include <sys/termios.h>
 
+void init_bfd(DebugModule* dbg, const char *filename) {
+    bfd_init();
+
+    dbg->abfd = bfd_openr(filename, NULL);
+    if (!dbg->abfd) {
+        bfd_perror("bfd_openr");
+        exit(1);
+    }
+
+    if (!bfd_check_format(dbg->abfd, bfd_object)) {
+        fprintf(stderr, "Not an object file\n");
+        exit(1);
+    }
+
+    long symtab_size = bfd_get_symtab_upper_bound(dbg->abfd);
+    dbg->syms = malloc(symtab_size);
+    bfd_canonicalize_symtab(dbg->abfd, dbg->syms);
+}
+
+void addr_to_line(DebugModule* dbg, bfd_vma addr) {
+    const char *file, *func;
+    unsigned int line;
+
+    if (bfd_find_nearest_line(dbg->abfd, dbg->abfd->sections, dbg->syms,
+                              addr, &file, &func, &line)) {
+        printf("Address 0x%lx -> %s:%u (%s)\n",
+               addr, file, line, func);
+    } else {
+        printf("No debug info for 0x%lx\n", addr);
+    }
+}
+
+bfd_vma symbol_to_addr(DebugModule* dbg, const char *name) {
+    unsigned int count = bfd_get_symtab_upper_bound(dbg->abfd) / sizeof(asymbol *);
+    for (unsigned int i = 0; i < count; i++) {
+        const char *symname = bfd_asymbol_name(dbg->syms[i]);
+        if (symname && strcmp(symname, name) == 0) {
+            return bfd_asymbol_value(dbg->syms[i]);
+        }
+    }
+    return 0;
+}
+
+bfd_vma line_to_addr(DebugModule* dbg, const char *file, unsigned int target_line) {
+    for (asection *sec = dbg->abfd->sections; sec; sec = sec->next) {
+        if (!(sec->flags & SEC_CODE)) continue;  //only scan .text
+
+        bfd_vma start = sec->vma;
+        bfd_vma end   = sec->vma + sec->size;
+
+        for (bfd_vma addr = start; addr < end; addr++) {
+            const char *srcfile, *func;
+            unsigned int line;
+
+            if (bfd_find_nearest_line(dbg->abfd, sec, dbg->syms,
+                                      addr, &srcfile, &func, &line)) {
+
+                if (srcfile && strcmp(srcfile, file) == 0 &&
+                    line == target_line) {
+                    return addr;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 void DebugModule_init(DebugModule* dbg, MainBus* systemBus) {
     dbg->systemBus = systemBus;
     dbg->running = 1;
-    memset(dbg->file, 0, sizeof(dbg->file));
+    dbg->syms = NULL;
+    dbg->abfd = NULL;
+    for (int i = 0; i < BKPT_LEN; i++)
+        dbg->breakpoint[i] = 0;
+}
+
+int DebugModule_addBreakpoint(DebugModule* dbg, int address) {
+    for (int i = 0; i < BKPT_LEN; i++) {
+        if (dbg->breakpoint[i] == 0) {
+            dbg->breakpoint[i] = address;
+            return i;
+        }
+    }
+    return 0;
 }
 
 void DebugModule_sendHalt(DebugModule* dbg, int cause) {
     CPU* cpu = dbg->systemBus->cpu;
-    cpu->mode = MODE_D;
     cpu->csr_dpc = cpu->pc;
-    cpu->csr_dcsr &= ~DCSR_CAUSE_MSK;
-    cpu->csr_dcsr |= DCSR_CAUSE(cause);
+    cpu->csr_dcsr &= ~(DCSR_CAUSE_MSK | DCSR_PRV_MSK);
+    cpu->csr_dcsr |= DCSR_CAUSE(cause) | DCSR_PRV(cpu->mode);
+    cpu->mode = MODE_D;
     printf("rvemu: halting core\r\n");
 }
 
@@ -30,9 +110,6 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
     CPU* cpu = dbg->systemBus->cpu;
 
     switch(cmd) {
-        case DBG_HALT:
-            DebugModule_sendHalt(dbg, 3); //halt request
-            break;
         case DBG_LOAD:
             {
                 char* path = va_arg(args, char*);
@@ -53,7 +130,7 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
         case DBG_FILE:
             {
                 char* path = va_arg(args, char*);
-                snprintf(dbg->file, 256, "%s", path);
+                init_bfd(dbg, path);
             }
             break;
         case DBG_INFO:
@@ -62,15 +139,40 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
             printf("pc=%d\r\n", cpu->pc);
             printf("csr: mstatus=%d, mtvec=%d, mepc=%d, mcause=%d\n", cpu->csr_mstatus, cpu->csr_mtvec, cpu->csr_mepc, cpu->csr_mcause);
             break;
+        case DBG_LINE:
+            {
+                uint32_t vma = va_arg(args, int);
+                addr_to_line(dbg, vma);
+            }
+            break;
+        case DBG_BREAK:
+            {
+                uint32_t vma = va_arg(args, int);
+                int bkpt = DebugModule_addBreakpoint(dbg, vma);
+                printf("breakpoint %d at 0x%x\r\n", bkpt, vma);
+            }
+            break;
         case DBG_CATCH_VEC:
             cpu->csr_dcsr |= DCSR_VCATCH(1);
             break;
         case DBG_CATCH_EBREAK:
             cpu->csr_dcsr |= DCSR_EBREAK(1);
             break;
-        case DBG_CONTINUE:
-            cpu->mode = MODE_M;
+        case DBG_HALT:
+            DebugModule_sendHalt(dbg, 3); //halt request
+            break;
+        case DBG_STEP:
+            cpu->csr_dcsr |= DCSR_STEP(1);
+            cpu->mode = DCSR_GETPRV(cpu->csr_dcsr);
             cpu->pc = cpu->csr_dpc;
+            break;
+        case DBG_CONTINUE:
+            cpu->csr_dcsr &= ~DCSR_STEP(1);
+            cpu->mode = DCSR_GETPRV(cpu->csr_dcsr);
+            cpu->pc = cpu->csr_dpc;
+            break;
+        case DBG_SKIP:
+            cpu->csr_dpc += 4;
             break;
         default:
             printf("rvemu: unknown debug command %d\r\n", cmd);
@@ -80,31 +182,11 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
 }
 
 static const char* dcsr_causes[] = {
-    "none",
     "ebreak",
     "exception",
     "halt request",
     "step"
 };
-
-static char* get_line(DebugModule* dbg, uint32_t address) {
-    if (dbg->file[0] == '\0') {
-        printf("file: no elf file loaded\n");
-        return "";
-    }
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd),
-             "riscv64-unknown-elf-addr2line -e %s 0x%x", dbg->file, address);
-
-    FILE *fp = popen(cmd, "r");
-    if (!fp) { perror("popen"); return ""; }
-
-    static char buf[512];
-    fgets(buf, sizeof(buf), fp);
-
-    pclose(fp);
-    return buf;
-}
 
 void DebugModule_shell(DebugModule* dbg) {
     
@@ -140,6 +222,23 @@ void DebugModule_shell(DebugModule* dbg) {
             printf("Continuing\n");
             DebugModule_sendCmd(dbg, DBG_CONTINUE);
             break;
+        } else if (strcmp(arg_vec[0], "s") == 0) {
+            DebugModule_sendCmd(dbg, DBG_STEP);
+            break;
+        } else if (strcmp(arg_vec[0], "b") == 0) {
+            uint32_t vma = 0;
+            if (argc == 3) {
+                vma = line_to_addr(dbg, arg_vec[1], atoi(arg_vec[2]));
+            } else if (argc == 2) {
+                vma = symbol_to_addr(dbg, arg_vec[1]);
+            }
+            if (vma != 0) {
+                DebugModule_sendCmd(dbg, DBG_BREAK, vma);
+            } else {
+                printf("break: symbol/line not found\n");
+            }
+        } else if (strcmp(arg_vec[0], "skip") == 0) {
+            DebugModule_sendCmd(dbg, DBG_SKIP);
         } else if (strcmp(arg_vec[0], "load") == 0) {
             if (argc != 4) {
                 printf("load: invalid argument(s)\n");
@@ -153,10 +252,12 @@ void DebugModule_shell(DebugModule* dbg) {
                 DebugModule_sendCmd(dbg, DBG_FILE, arg_vec[1]);
             }
         } else if (strcmp(arg_vec[0], "line") == 0) {
-            if (argc != 2) {
-                printf("line: invalid argument(s)\n");
+            if (argc == 1) {
+                DebugModule_sendCmd(dbg, DBG_LINE, dbg->systemBus->cpu->pc);
+            } else if (argc == 2) {
+                DebugModule_sendCmd(dbg, DBG_LINE, atoi(arg_vec[1]));
             } else {
-                printf("line: %s\n", get_line(dbg, atoi(arg_vec[1])));
+                printf("line: invalid argument(s)\n");
             }
         } else if (strcmp(arg_vec[0], "info") == 0) {
             DebugModule_sendCmd(dbg, DBG_INFO);
@@ -184,13 +285,18 @@ void DebugModule_tick(DebugModule* dbg) {
         tcsetattr(STDIN_FILENO, TCSANOW, &t);
 
         setvbuf(stdout, NULL, _IONBF, 0);
-        printf("rvemu: entered debug mode!\n");
-        printf("dcsr.cause: %s, pc: 0x%x, mcause.code: %d, mcause.int: %b, mtval: 0x%x\n", dcsr_causes[DCSR_GETCAUSE(hart0->csr_dcsr)], hart0->pc, hart0->csr_mcause & MCAUSE_CODE_MSK, hart0->csr_mcause & MCAUSE_INTR(1), hart0->csr_mtval);
-        printf("line: %s\n", get_line(dbg, hart0->pc));
-        
+        printf("dcsr.cause: %s, pc: 0x%x, mcause{code: %d, int: %d}, mtval: 0x%x\n", dcsr_causes[DCSR_GETCAUSE(hart0->csr_dcsr)], hart0->pc, hart0->csr_mcause & MCAUSE_CODE_MSK, hart0->csr_mcause & MCAUSE_INTR(1), hart0->csr_mtval);
+        DebugModule_sendCmd(dbg, DBG_LINE, hart0->pc);        
         DebugModule_shell(dbg);
         
         tcsetattr(STDIN_FILENO, TCSANOW, &old);
+    }
+
+    for (int i = 0; i < BKPT_LEN; i++) {
+        if (dbg->breakpoint[i] != 0 && dbg->breakpoint[i] == hart0->pc) {
+            printf("hit breakpoint %d\r\n", i);
+            DebugModule_sendHalt(dbg, 2);
+        }
     }
 }
 

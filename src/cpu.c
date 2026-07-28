@@ -73,7 +73,7 @@ static inline uint32_t csr_read(CPU* cpu, uint32_t csr) {
 
 void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval) {
     if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
-        DebugModule_sendHalt(cpu->system_bus->dbg, 2);
+        DebugModule_sendHalt(cpu->system_bus->dbg, 1);
     }
     cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
     cpu->csr_mtval = mtval;
@@ -86,11 +86,10 @@ void CPU_interrupt_fast(CPU* cpu, uint8_t irq) {
 }
 
 void CPU_iret(CPU* cpu) {
-    cpu->mode = MSTATUS_GETMPRV(cpu->csr_mstatus);
+    cpu->mode = MSTATUS_GETMPP(cpu->csr_mstatus);
     cpu->csr_mstatus &= ~MSTATUS_MIE(1);
     if (cpu->csr_mstatus & MSTATUS_MPIE(1))
         cpu->csr_mstatus |= MSTATUS_MIE(1);
-
     cpu->pc = cpu->csr_mepc;
 }
 
@@ -99,9 +98,9 @@ void CPU_handleTrap(CPU* cpu) {
     if (cpu->csr_mstatus & MSTATUS_MIE(1))
         cpu->csr_mstatus |= MSTATUS_MPIE(1);
     cpu->csr_mstatus &= ~MSTATUS_MIE(1);
-    cpu->csr_mstatus &= ~MSTATUS_MPRV_MSK;
-    cpu->csr_mstatus |= MSTATUS_MPRV(cpu->mode);
-
+    cpu->csr_mstatus &= ~MSTATUS_MPP_MSK;
+    cpu->csr_mstatus |= MSTATUS_MPP(cpu->mode);
+    cpu->mode = MODE_M;
     cpu->csr_mepc = cpu->pc;
     cpu->pc = cpu->csr_mtvec;
     return;
@@ -116,6 +115,7 @@ void CPU_tick(CPU* cpu) {
     uint32_t temp;
     uint8_t byte;
     uint16_t halfword;
+    uint32_t word;
     cpu->registers[0] = 0; //force x0 to zero
 
     //interrupt handeling
@@ -148,7 +148,8 @@ void CPU_tick(CPU* cpu) {
     uint32_t funct7 = (instruction >> 25) & 0x7F;
     
     uint32_t i_imm = (instruction >> 20) & 0xFFF;
-    uint32_t s_imm = ((instruction >> 7) & 0x1F) | ((instruction & 0xFF000000) >> 20);
+    uint32_t s_imm = ((instruction >> 7) & 0x1F) | ((instruction & 0xFE000000) >> 20);
+    uint32_t b_imm = ((instruction >> 7) & 0x1E) | ((instruction & 0x7E000000) >> 20) | ((instruction & 0x80) << 4);
     uint32_t u_imm = instruction & 0xFFFFF000;
 
     //execute
@@ -165,7 +166,7 @@ void CPU_tick(CPU* cpu) {
         case 0b0010011:
             switch (funct3) {
                 case 0b000: //ADDI
-                    cpu->registers[rd] = cpu->registers[rs1] + (int) SEXT(i_imm, 11);
+                    cpu->registers[rd] = cpu->registers[rs1] + SEXT(i_imm, 11);
                     break;
                 case 0b001: //SLLI
                     cpu->registers[rd] = cpu->registers[rs1] << (i_imm & 0x1F);
@@ -177,7 +178,7 @@ void CPU_tick(CPU* cpu) {
                     cpu->registers[rd] = cpu->registers[rs1] < i_imm;
                     break;
                 case 0b100: //XORI
-                    cpu->registers[rd] = cpu->registers[rs1] ^ (int) SEXT(i_imm, 11);
+                    cpu->registers[rd] = cpu->registers[rs1] ^ SEXT(i_imm, 11);
                     break;
                 case 0b101: //SRAI, SRLI
                     if (i_imm & 0x400) {
@@ -187,10 +188,10 @@ void CPU_tick(CPU* cpu) {
                     }
                     break;
                 case 0b110: //ORI
-                    cpu->registers[rd] = cpu->registers[rs1] | (int) SEXT(i_imm, 11);
+                    cpu->registers[rd] = cpu->registers[rs1] | SEXT(i_imm, 11);
                     break;
                 case 0b111: //ANDI
-                    cpu->registers[rd] = cpu->registers[rs1] & (int) SEXT(i_imm, 11);
+                    cpu->registers[rd] = cpu->registers[rs1] & SEXT(i_imm, 11);
                     break;
             }
             pc += 4;
@@ -235,8 +236,10 @@ void CPU_tick(CPU* cpu) {
             break;
 
         case 0b1110011:
-            temp = csr_read(cpu, i_imm);
-            cpu->registers[rd] = temp;
+            if (funct3 > 0) {
+                temp = csr_read(cpu, i_imm);
+                cpu->registers[rd] = temp;
+            }
 
             switch (funct3) {
                 case 0b000:
@@ -250,7 +253,7 @@ void CPU_tick(CPU* cpu) {
                         }
                     } else if (rs2 == 1) { //EBREAK
                         if (cpu->csr_dcsr & DCSR_EBREAK(1)) {
-                            DebugModule_sendHalt(cpu->system_bus->dbg, 1);
+                            DebugModule_sendHalt(cpu->system_bus->dbg, 0);
                         } else {
                             CPU_exception(cpu, FAULT_DEBUG, 0);
                         }
@@ -259,6 +262,7 @@ void CPU_tick(CPU* cpu) {
                             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
                         } else {
                             CPU_iret(cpu);
+                            pc = cpu->pc;
                         }
                     }
                     break;
@@ -275,40 +279,41 @@ void CPU_tick(CPU* cpu) {
                     pc += 4;
                     break;
                 case 0b101: //CSRRWI
-                    csr_write(cpu, i_imm, (int) rs1);
+                    csr_write(cpu, i_imm, rs1);
                     pc += 4;
                     break;
                 case 0b110: //CSRRSI
-                    csr_write(cpu, i_imm, temp | (int)rs1);
+                    csr_write(cpu, i_imm, temp | rs1);
                     pc += 4;
                     break;
                 case 0b111: //CSRRCI
-                    csr_write(cpu, i_imm, temp & ~(int)rs1);
+                    csr_write(cpu, i_imm, temp & ~rs1);
                     pc += 4;
                     break;
             }
             break;
 
         case 0b0000011:
+            temp = cpu->registers[rs1] + SEXT(i_imm, 11);
             switch (funct3) {
                 case 0b000: //LB
-                    bus->read(bus, cpu->registers[rs1] + i_imm, &byte, 1);
-                    cpu->registers[rd] = (int) byte;
+                    bus->read(bus, temp, &byte, 1);
+                    cpu->registers[rd] = SEXT(byte, 7);
                     break;
                 case 0b001: //LH
-                    bus->read(bus, cpu->registers[rs1] + i_imm, &halfword, 2);
-                    cpu->registers[rd] = (int) halfword;
+                    bus->read(bus, temp, &halfword, 2);
+                    cpu->registers[rd] = SEXT(halfword, 15);
                     break;
                 case 0b010: //LW
-                    bus->read(bus, cpu->registers[rs1] + i_imm, &temp, 4);
-                    cpu->registers[rd] = (int) temp;
+                    bus->read(bus, temp, &word, 4);
+                    cpu->registers[rd] = word;
                     break;
                 case 0b100: //LBU
-                    bus->read(bus, cpu->registers[rs1] + i_imm, &byte, 1);
+                    bus->read(bus, temp, &byte, 1);
                     cpu->registers[rd] = byte;
                     break;
                 case 0b101: //LHU
-                    bus->read(bus, cpu->registers[rs1] + i_imm, &halfword, 2);
+                    bus->read(bus, temp, &halfword, 2);
                     cpu->registers[rd] = halfword;
                     break;
             }
@@ -316,15 +321,16 @@ void CPU_tick(CPU* cpu) {
             break;
 
         case 0b0100011:
+            temp = cpu->registers[rs1] + SEXT(s_imm, 11);
             switch (funct3) {
                 case 0b000: //SB
-                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 1);
+                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 1);
                     break;
                 case 0b001: //SH
-                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 2);
+                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 2);
                     break;
                 case 0b010: //SW
-                    bus->write(bus, cpu->registers[rs1] + (int) SEXT(s_imm, 11), &cpu->registers[rs2], 1);
+                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 4);
                     break;
             }
             pc += 4;
@@ -333,16 +339,18 @@ void CPU_tick(CPU* cpu) {
         case 0b1101111: //JAL
             cpu->registers[rd] = pc + 4;
             temp = ((instruction & 0xFF000) | ((instruction & 0x7FE00000) >> 20) | ((instruction & 0x80000000) >> 11) | ((instruction & 0x100000) >> 9));
-            pc += (int) SEXT(temp, 19);
+            pc += SEXT(temp, 19);
             break;
 
         case 0b1100111: //JALR
             cpu->registers[rd] = pc + 4;
-            temp = cpu->registers[rs1] + (int) SEXT(i_imm, 11);
+            temp = cpu->registers[rs1] + SEXT(i_imm, 11);
             pc = temp & ~1;
+            printf("jalr 0x%x\n", temp);
             break;
 
         case 0b1100011:
+            temp = 0;
             switch (funct3) {
                 case 0b000: //BEQ
                     temp = cpu->registers[rs1] == cpu->registers[rs2];
@@ -361,7 +369,7 @@ void CPU_tick(CPU* cpu) {
                     break;
             }
             if (temp) {
-                pc += (int) s_imm;
+                pc += (int) SEXT(b_imm, 12);
             } else {
                 pc += 4;
             }
@@ -371,6 +379,10 @@ void CPU_tick(CPU* cpu) {
             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
     }
     cpu->pc = pc;
+    
+    if (cpu->csr_dcsr & DCSR_STEP(1)) {
+        DebugModule_sendHalt(cpu->system_bus->dbg, 3);
+    }
 }
 
 
