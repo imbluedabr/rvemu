@@ -2,8 +2,9 @@
 .global user_entry
 
 user_entry:
-    la a0, msg_hello
-    call puts
+    li a0, 0x41
+    call putchar
+
     call exit
 
     # void puts(const char *);
@@ -31,8 +32,16 @@ puts:
     # void putchar(const char *);
     # Print byte using system call
 putchar:
+    addi sp, sp, -16
+    li t0, 69
+    sw t0, (sp)
+    li t0, 420
     li a7, 1
+    ebreak
     ecall
+    lw t0, (sp)
+    addi sp, sp, 16
+    ebreak
     ret
 
     # [[noreturn]] void exit();

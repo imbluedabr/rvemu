@@ -23,9 +23,6 @@ static inline void csr_write(CPU* cpu, uint32_t csr, uint32_t val) {
         case 0x305: //mtvec
             cpu->csr_mtvec = val;
             break;
-        case 0x310: //mstatush
-            cpu->csr_mstatush = val;
-            break;
         case 0x340: //mscratch
             cpu->csr_mscratch = val;
             break;
@@ -54,8 +51,6 @@ static inline uint32_t csr_read(CPU* cpu, uint32_t csr) {
             return cpu->csr_mie;
         case 0x305: //mtvec
             return cpu->csr_mtvec;
-        case 0x310: //mstatush
-            return cpu->csr_mstatush;
         case 0x340: //mscratch
             return cpu->csr_mscratch;
         case 0x341: //mepc
@@ -106,7 +101,9 @@ void CPU_handleTrap(CPU* cpu) {
     return;
 }
 
-#define SEXT(VAL, N) (VAL | ((VAL & (1 << N)) ? (~((1 << N) - 1)) : 0x0))
+static inline uint32_t SEXT(uint32_t VAL, uint32_t N) {
+    return (VAL | ((VAL & ((uint32_t)1 << N)) ? (~((1 << N) - 1)) : 0x0));
+}
 
 void CPU_tick(CPU* cpu) {
     if (cpu->mode == MODE_D) return;
@@ -116,7 +113,6 @@ void CPU_tick(CPU* cpu) {
     uint8_t byte;
     uint16_t halfword;
     uint32_t word;
-    cpu->registers[0] = 0; //force x0 to zero
 
     //interrupt handeling
     if (cpu->trap_pending) {
@@ -156,44 +152,45 @@ void CPU_tick(CPU* cpu) {
     
     switch (opcode) {
         case 0b0110111: //LUI
-            cpu->registers[rd] = u_imm;
+            if (rd) cpu->registers[rd] = u_imm;
             pc += 4;
             break;
         case 0b0010111: //AUIPC
-            cpu->registers[rd] = cpu->pc + u_imm;
+            if (rd) cpu->registers[rd] = cpu->pc + u_imm;
             pc += 4;
             break;
         case 0b0010011:
             switch (funct3) {
                 case 0b000: //ADDI
-                    cpu->registers[rd] = cpu->registers[rs1] + SEXT(i_imm, 11);
+                    temp = cpu->registers[rs1] + SEXT(i_imm, 11);
                     break;
                 case 0b001: //SLLI
-                    cpu->registers[rd] = cpu->registers[rs1] << (i_imm & 0x1F);
+                    temp = cpu->registers[rs1] << (i_imm & 0x1F);
                     break;
                 case 0b010: //SLTI
-                    cpu->registers[rd] = ((int) cpu->registers[rs1]) < (int) SEXT(i_imm, 11);
+                    temp = ((int) cpu->registers[rs1]) < (int) SEXT(i_imm, 11);
                     break;
                 case 0b011: //SLTIU
-                    cpu->registers[rd] = cpu->registers[rs1] < i_imm;
+                    temp = cpu->registers[rs1] < i_imm;
                     break;
                 case 0b100: //XORI
-                    cpu->registers[rd] = cpu->registers[rs1] ^ SEXT(i_imm, 11);
+                    temp = cpu->registers[rs1] ^ SEXT(i_imm, 11);
                     break;
                 case 0b101: //SRAI, SRLI
                     if (i_imm & 0x400) {
-                        cpu->registers[rd] = ((int) cpu->registers[rs1]) >> (i_imm & 0x1F);
+                        temp = ((int) cpu->registers[rs1]) >> (i_imm & 0x1F);
                     } else {
-                        cpu->registers[rd] = cpu->registers[rs1] >> (i_imm & 0x1F);
+                        temp = cpu->registers[rs1] >> (i_imm & 0x1F);
                     }
                     break;
                 case 0b110: //ORI
-                    cpu->registers[rd] = cpu->registers[rs1] | SEXT(i_imm, 11);
+                    temp = cpu->registers[rs1] | SEXT(i_imm, 11);
                     break;
                 case 0b111: //ANDI
-                    cpu->registers[rd] = cpu->registers[rs1] & SEXT(i_imm, 11);
+                    temp = cpu->registers[rs1] & SEXT(i_imm, 11);
                     break;
             }
+            if (rd) cpu->registers[rd] = temp;
             pc += 4;
             break;
 
@@ -201,44 +198,45 @@ void CPU_tick(CPU* cpu) {
             switch (funct3) {
                 case 0b000: //ADD, SUB
                     if (funct7 & 0x20) {
-                        cpu->registers[rd] = cpu->registers[rs1] - cpu->registers[rs2];
+                        temp = cpu->registers[rs1] - cpu->registers[rs2];
                     } else {
-                        cpu->registers[rd] = cpu->registers[rs1] + cpu->registers[rs2];
+                        temp = cpu->registers[rs1] + cpu->registers[rs2];
                     }
                     break;
                 case 0b001: //SLL
-                    cpu->registers[rd] = cpu->registers[rs1] << (cpu->registers[rs2] & 0x1F);
+                    temp = cpu->registers[rs1] << (cpu->registers[rs2] & 0x1F);
                     break;
                 case 0b010: //SLT
-                    cpu->registers[rd] = ((int) cpu->registers[rs1]) < (int) cpu->registers[rs2];
+                    temp = ((int) cpu->registers[rs1]) < (int) cpu->registers[rs2];
                     break;
                 case 0b011: //SLTU
-                    cpu->registers[rd] = cpu->registers[rs1] < cpu->registers[rs2];
+                    temp = cpu->registers[rs1] < cpu->registers[rs2];
                     break;
                 case 0b100: //XOR
-                    cpu->registers[rd] = cpu->registers[rs1] ^ cpu->registers[rs2];
+                    temp = cpu->registers[rs1] ^ cpu->registers[rs2];
                     break;
                 case 0b101: //SRA, SRL
                     if (funct7 & 0x20) {
-                        cpu->registers[rd] = ((int) cpu->registers[rs1]) >> (cpu->registers[rs2] & 0x1F);
+                        temp = ((int) cpu->registers[rs1]) >> (cpu->registers[rs2] & 0x1F);
                     } else {
-                        cpu->registers[rd] = cpu->registers[rs1] >> (cpu->registers[rs2] & 0x1F);
+                        temp = cpu->registers[rs1] >> (cpu->registers[rs2] & 0x1F);
                     }
                     break;
                 case 0b110: //OR
-                    cpu->registers[rd] = cpu->registers[rs1] | cpu->registers[rs2];
+                    temp = cpu->registers[rs1] | cpu->registers[rs2];
                     break;
                 case 0b111: //AND
-                    cpu->registers[rd] = cpu->registers[rs1] & cpu->registers[rs2];
+                    temp = cpu->registers[rs1] & cpu->registers[rs2];
                     break;
             }
+            if (rd) cpu->registers[rd] = temp;
             pc += 4;
             break;
 
         case 0b1110011:
             if (funct3 > 0) {
                 temp = csr_read(cpu, i_imm);
-                cpu->registers[rd] = temp;
+                if (rd) cpu->registers[rd] = temp;
             }
 
             switch (funct3) {
@@ -298,55 +296,63 @@ void CPU_tick(CPU* cpu) {
             switch (funct3) {
                 case 0b000: //LB
                     bus->read(bus, temp, &byte, 1);
-                    cpu->registers[rd] = SEXT(byte, 7);
+                    temp = SEXT(byte, 7);
                     break;
                 case 0b001: //LH
                     bus->read(bus, temp, &halfword, 2);
-                    cpu->registers[rd] = SEXT(halfword, 15);
+                    temp = SEXT(halfword, 15);
                     break;
                 case 0b010: //LW
                     bus->read(bus, temp, &word, 4);
-                    cpu->registers[rd] = word;
+                    temp = word;
                     break;
                 case 0b100: //LBU
                     bus->read(bus, temp, &byte, 1);
-                    cpu->registers[rd] = byte;
+                    temp = byte;
                     break;
                 case 0b101: //LHU
                     bus->read(bus, temp, &halfword, 2);
-                    cpu->registers[rd] = halfword;
+                    temp = halfword;
                     break;
+                default:
+                    goto abort_illinstr;
             }
+            if (rd) cpu->registers[rd] = temp;
             pc += 4;
             break;
 
         case 0b0100011:
+            if (!rs2) {
+                pc += 4;
+                break;
+            }
             temp = cpu->registers[rs1] + SEXT(s_imm, 11);
+
             switch (funct3) {
                 case 0b000: //SB
-                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 1);
+                    bus->write(bus, temp, &cpu->registers[rs2], 1);
                     break;
                 case 0b001: //SH
-                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 2);
+                    bus->write(bus, temp, &cpu->registers[rs2], 2);
                     break;
                 case 0b010: //SW
-                    bus->write(bus, cpu->registers[rs1] + SEXT(s_imm, 11), &cpu->registers[rs2], 4);
+                    bus->write(bus, temp, &cpu->registers[rs2], 4);
                     break;
             }
+            
             pc += 4;
             break;
         
         case 0b1101111: //JAL
-            cpu->registers[rd] = pc + 4;
+            if (rd) cpu->registers[rd] = pc + 4;
             temp = ((instruction & 0xFF000) | ((instruction & 0x7FE00000) >> 20) | ((instruction & 0x80000000) >> 11) | ((instruction & 0x100000) >> 9));
             pc += SEXT(temp, 19);
             break;
 
         case 0b1100111: //JALR
-            cpu->registers[rd] = pc + 4;
+            if (rd) cpu->registers[rd] = pc + 4;
             temp = cpu->registers[rs1] + SEXT(i_imm, 11);
             pc = temp & ~1;
-            printf("jalr 0x%x\n", temp);
             break;
 
         case 0b1100011:
@@ -369,7 +375,7 @@ void CPU_tick(CPU* cpu) {
                     break;
             }
             if (temp) {
-                pc += (int) SEXT(b_imm, 12);
+                pc += SEXT(b_imm, 11);
             } else {
                 pc += 4;
             }
@@ -383,6 +389,11 @@ void CPU_tick(CPU* cpu) {
     if (cpu->csr_dcsr & DCSR_STEP(1)) {
         DebugModule_sendHalt(cpu->system_bus->dbg, 3);
     }
+    return;
+
+abort_illinstr:
+    CPU_exception(cpu, FAULT_ILLINSTR, instruction);
+    cpu->pc = pc;
 }
 
 

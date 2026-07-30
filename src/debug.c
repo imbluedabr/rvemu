@@ -135,7 +135,7 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
             break;
         case DBG_INFO:
             printf("registers: ");
-            for (int i = 1; i < 32; i++) printf("x%d=%d, ", i, cpu->registers[i]);
+            for (int i = 0; i < 32; i++) printf("x%d=%d, ", i, cpu->registers[i]);
             printf("pc=%d\r\n", cpu->pc);
             printf("csr: mstatus=%d, mtvec=%d, mepc=%d, mcause=%d\n", cpu->csr_mstatus, cpu->csr_mtvec, cpu->csr_mepc, cpu->csr_mcause);
             break;
