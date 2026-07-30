@@ -6,7 +6,7 @@
 #include "debug.h"
 
 int main(int argc, char** argv) {
-    printf("rvemu v0.1.4\n");
+    printf("rvemu v0.1.5\n");
     
     CPU hart0;
     CPU_init(&hart0);

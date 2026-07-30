@@ -235,8 +235,8 @@ void CPU_tick(CPU* cpu) {
 
         case 0b1110011:
             if (funct3 > 0) {
-                temp = csr_read(cpu, i_imm);
-                if (rd) cpu->registers[rd] = temp;
+                temp = 0;
+                if (rd) temp = csr_read(cpu, i_imm);
             }
 
             switch (funct3) {
@@ -288,6 +288,9 @@ void CPU_tick(CPU* cpu) {
                     csr_write(cpu, i_imm, temp & ~rs1);
                     pc += 4;
                     break;
+            }
+            if (funct3 > 0) {
+                if (rd) cpu->registers[rd] = temp;
             }
             break;
 
@@ -385,7 +388,6 @@ void CPU_tick(CPU* cpu) {
             CPU_exception(cpu, FAULT_ILLINSTR, instruction);
     }
     cpu->pc = pc;
-    
     if (cpu->csr_dcsr & DCSR_STEP(1)) {
         DebugModule_sendHalt(cpu->system_bus->dbg, 3);
     }

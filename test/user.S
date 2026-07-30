@@ -2,9 +2,8 @@
 .global user_entry
 
 user_entry:
-    li a0, 0x41
-    call putchar
-
+    la a0, msg_hello
+    call puts
     call exit
 
     # void puts(const char *);
@@ -26,22 +25,13 @@ puts:
     lw s0, (sp)
     lw ra, 4(sp)
     addi sp, sp, 16
-    ebreak
     ret
 
     # void putchar(const char *);
     # Print byte using system call
 putchar:
-    addi sp, sp, -16
-    li t0, 69
-    sw t0, (sp)
-    li t0, 420
     li a7, 1
-    ebreak
     ecall
-    lw t0, (sp)
-    addi sp, sp, 16
-    ebreak
     ret
 
     # [[noreturn]] void exit();
@@ -53,4 +43,4 @@ exit:
 
 .section .data
 msg_hello:
-    .byte 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21, 0x0a, 0x0
+    .asciz "Hello world!\r\n"
