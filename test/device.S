@@ -49,8 +49,31 @@ device_alloc:
 
     # struct device* device_create(int driver, void* base)
 device_register:
+    addi sp, sp, -16
+    sw ra, 0(sp)
+    sw s0, 4(sp)
+    sw s1, 8(sp)
+
+    # struct driver* drv = &driver_table[driver];
+    la s0, driver_table
+    slli a0, a0, 4
+    add s0, s0, a0
     
+    #struct device* dev = device_alloc()
+    call device_alloc
+    mov s1, a0
 
+    #drv->init(dev, base)
+    lw t0, 0(s0)
+    jalr ra, t0, 0
+    
+    mov a0, s0
+    lw s1, 8(sp)
+    lw s0, 4(sp)
+    lw ra, 0(sp)
+    addi sp, sp, 16
+    ret
 
-
-
+    # struct device* device_lookup(int devno)
+device_lookup:
+    
