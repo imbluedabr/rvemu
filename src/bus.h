@@ -23,7 +23,8 @@ typedef struct MainBus {
 
 typedef enum {
     DEV_SRAM,
-    DEV_SERIAL
+    DEV_SERIAL,
+    DEV_TIMER
 } DeviceType;
 
 typedef struct BusDevice {

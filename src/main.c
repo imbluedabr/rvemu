@@ -2,19 +2,19 @@
 #include "cpu.h"
 #include "bus.h"
 #include "uart.h"
+#include "timer.h"
 #include "mem.h"
 #include "debug.h"
 
 int main(int argc, char** argv) {
     printf("rvemu v0.1.5\n");
     
-    CPU hart0;
-    CPU_init(&hart0);
-
     MainBus systemBus;
     MainBus_init(&systemBus);
+
+    CPU hart0;
+    CPU_init(&hart0, &systemBus);
     systemBus.cpu = &hart0;
-    hart0.system_bus = &systemBus;
     
     DebugModule debug;
     DebugModule_init(&debug, &systemBus);
@@ -27,6 +27,10 @@ int main(int argc, char** argv) {
     SimpleUART uart0;
     SimpleUART_init(&uart0, &systemBus);
     MainBus_addDevice(&systemBus, &uart0._BusDevice, 0x8000, 0x10);
+    
+    SysTickTimer timer0;
+    SysTickTimer_init(&timer0, &systemBus);
+    MainBus_addDevice(&systemBus, &timer0._BusDevice, 0x8010, 0x10);
 
     DebugModule_sendCmd(&debug, DBG_LOAD, "./test/test.bin", 0x0000, 0x1000);
     DebugModule_sendCmd(&debug, DBG_FILE, "./test/test.elf");
@@ -37,7 +41,9 @@ int main(int argc, char** argv) {
     while (debug.running) {
         CPU_tick(&hart0);
         SimpleUART_tick(&uart0);
+        SysTickTimer_tick(&timer0);
         DebugModule_tick(&debug);
+        
     }
     
     SimpleUART_destroy(&uart0);

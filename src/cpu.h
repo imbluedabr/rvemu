@@ -68,7 +68,7 @@ typedef struct CPU {
     struct MainBus* system_bus;
 } CPU;
 
-void CPU_init(CPU* cpu);
+void CPU_init(CPU* cpu, struct MainBus* systemBus);
 void CPU_interrupt_fast(CPU* cpu, uint8_t irq);
 void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval);
 void CPU_tick(CPU* cpu);

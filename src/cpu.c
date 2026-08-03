@@ -4,9 +4,10 @@
 #include <string.h>
 #include <stdio.h>
 
-void CPU_init(CPU* cpu) {
+void CPU_init(CPU* cpu, MainBus* systemBus) {
     memset(cpu, 0, sizeof(CPU));
     cpu->mode = MODE_M;
+    cpu->system_bus = systemBus;
 }
 
 static inline void csr_write(CPU* cpu, uint32_t csr, uint32_t val) {
@@ -76,13 +77,16 @@ void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval) {
 }
 
 void CPU_interrupt_fast(CPU* cpu, uint8_t irq) {
+    if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
+        DebugModule_sendHalt(cpu->system_bus->dbg, 1);
+    }
     cpu->csr_mcause = MCAUSE_CODE(irq + 16) | MCAUSE_INTR(1);
     cpu->csr_mip |= MIP_FAST_IRQ(1 << irq);
 }
 
 void CPU_iret(CPU* cpu) {
     cpu->mode = MSTATUS_GETMPP(cpu->csr_mstatus);
-    cpu->csr_mstatus &= ~MSTATUS_MIE(1);
+    cpu->csr_mstatus &= ~MSTATUS_MPP_MSK;
     if (cpu->csr_mstatus & MSTATUS_MPIE(1))
         cpu->csr_mstatus |= MSTATUS_MIE(1);
     cpu->pc = cpu->csr_mepc;
@@ -105,6 +109,22 @@ static inline uint32_t SEXT(uint32_t VAL, uint32_t N) {
     return (VAL | ((VAL & ((uint32_t)1 << N)) ? (~((1 << N) - 1)) : 0x0));
 }
 
+static void CPU_checkInterrupts(CPU* cpu) {
+
+    if (cpu->trap_pending) {
+        cpu->trap_pending = 0;
+        CPU_handleTrap(cpu);
+    } else if (cpu->csr_mstatus & MSTATUS_MIE(1)) {
+        for (int i = 0; i < 16; i++) {
+            if (cpu->csr_mie & MIE_FAST_IRQ(i) && cpu->csr_mip & MIP_FAST_IRQ(i)) {
+                cpu->csr_mip &= ~MIP_FAST_IRQ(1);
+                CPU_handleTrap(cpu);
+                break;
+            }
+        }
+    }
+}
+
 void CPU_tick(CPU* cpu) {
     if (cpu->mode == MODE_D) return;
     Bus* bus = &cpu->system_bus->_Bus;
@@ -115,24 +135,12 @@ void CPU_tick(CPU* cpu) {
     uint32_t word;
 
     //interrupt handeling
-    if (cpu->trap_pending) {
-        cpu->trap_pending = 0;
-        CPU_handleTrap(cpu);
-    } else {
-        for (int i = 0; i < 16; i++) {
-            if (cpu->csr_mip & (1 << i)) {
-                cpu->csr_mip &= ~(1 << i);
-                CPU_handleTrap(cpu);
-                break;
-            }
-        }
-    }
+    CPU_checkInterrupts(cpu);
 
     uint32_t pc = cpu->pc;
     //fetch
     if (bus->read(bus, pc, &instruction, 4) < 0) {
-        CPU_exception(cpu, FAULT_IACCESS, pc);
-        return;
+        return CPU_exception(cpu, FAULT_IACCESS, pc);
     }
     
     //decode
@@ -247,17 +255,17 @@ void CPU_tick(CPU* cpu) {
                         } else if (cpu->mode == MODE_U) {
                             CPU_exception(cpu, FAULT_UCALL, 0);
                         } else {
-                            CPU_exception(cpu, FAULT_ILLINSTR, instruction);
+                            return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
                         }
                     } else if (rs2 == 1) { //EBREAK
                         if (cpu->csr_dcsr & DCSR_EBREAK(1)) {
                             DebugModule_sendHalt(cpu->system_bus->dbg, 0);
                         } else {
-                            CPU_exception(cpu, FAULT_DEBUG, 0);
+                            return CPU_exception(cpu, FAULT_DEBUG, 0);
                         }
                     } else if (rs2 == 2) { //MRET
                         if (cpu->mode != MODE_M) {
-                            CPU_exception(cpu, FAULT_ILLINSTR, instruction);
+                            return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
                         } else {
                             CPU_iret(cpu);
                             pc = cpu->pc;
@@ -266,31 +274,28 @@ void CPU_tick(CPU* cpu) {
                     break;
                 case 0b001: //CSRRW
                     csr_write(cpu, i_imm, cpu->registers[rs1]);
-                    pc += 4;
                     break;
                 case 0b010: //CSRRS
                     csr_write(cpu, i_imm, temp | cpu->registers[rs1]);
-                    pc += 4;
                     break;
                 case 0b011: //CSRRC
                     csr_write(cpu, i_imm, temp & ~cpu->registers[rs1]);
-                    pc += 4;
                     break;
                 case 0b101: //CSRRWI
                     csr_write(cpu, i_imm, rs1);
-                    pc += 4;
                     break;
                 case 0b110: //CSRRSI
                     csr_write(cpu, i_imm, temp | rs1);
-                    pc += 4;
                     break;
                 case 0b111: //CSRRCI
                     csr_write(cpu, i_imm, temp & ~rs1);
-                    pc += 4;
                     break;
+                default:
+                    return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
             }
             if (funct3 > 0) {
                 if (rd) cpu->registers[rd] = temp;
+                pc += 4;
             }
             break;
 
@@ -318,17 +323,13 @@ void CPU_tick(CPU* cpu) {
                     temp = halfword;
                     break;
                 default:
-                    goto abort_illinstr;
+                    return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
             }
             if (rd) cpu->registers[rd] = temp;
             pc += 4;
             break;
 
         case 0b0100011:
-            if (!rs2) {
-                pc += 4;
-                break;
-            }
             temp = cpu->registers[rs1] + SEXT(s_imm, 11);
 
             switch (funct3) {
@@ -341,6 +342,8 @@ void CPU_tick(CPU* cpu) {
                 case 0b010: //SW
                     bus->write(bus, temp, &cpu->registers[rs2], 4);
                     break;
+                default:
+                    return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
             }
             
             pc += 4;
@@ -376,6 +379,8 @@ void CPU_tick(CPU* cpu) {
                 case 0b110: //BLTU
                     temp = cpu->registers[rs1] < cpu->registers[rs2];
                     break;
+                default:
+                    return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
             }
             if (temp) {
                 pc += SEXT(b_imm, 11);
@@ -385,17 +390,13 @@ void CPU_tick(CPU* cpu) {
             break;
 
         default:
-            CPU_exception(cpu, FAULT_ILLINSTR, instruction);
+            return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
     }
     cpu->pc = pc;
     if (cpu->csr_dcsr & DCSR_STEP(1)) {
         DebugModule_sendHalt(cpu->system_bus->dbg, 3);
     }
     return;
-
-abort_illinstr:
-    CPU_exception(cpu, FAULT_ILLINSTR, instruction);
-    cpu->pc = pc;
 }
 
 
