@@ -1,12 +1,22 @@
 
 .section .data
+.global uart_driver
+
+uart_driver_name:
+    .asciz "uart"
 
 # struct driver uart_driver
 uart_driver:
-    .word uart_init
+    .word uart_create # int (*create)(struct device* dev, void* base) 
+    .word 0 # struct device* instance_list
+    .word 0 # int instance_count
+    .word uart_driver_name
+
+# struct dev_ops uart_ops
+uart_ops:
     .word uart_read
     .word uart_write
-
+    .word 0
 /*
     struct mmio_uart {
         uint8_t data
@@ -17,7 +27,7 @@ uart_driver:
     }
 
     struct uart_device {
-        struct device _Device
+        struct device dev
     }
 */
 
@@ -25,21 +35,21 @@ uart_driver:
 .extern irq_register
 .extern irq_device_table
 
-    # void uart_init(struct device* uart, void* base)
-uart_init:
-    #uart->driver = &uart_driver
-    li t0, uart_driver
+    # void uart_create(struct device* uart, void* base)
+uart_create:
+    #uart->ops = &uart_ops
+    la t0, uart_ops
     sw t0, 0(a0)
 
     #uart->base = base
-    sw a1, 4(a0)
+    sw a1, 8(a0)
     
     ret
 
     # int uart_write(struct device* uart, void* buff, uint32_t count)
 uart_write:
     li t0, 0 #int i = 0
-    lw t1, 4(a0) #char* data = &uart->base->data
+    lw t1, 8(a0) #char* data = &uart->base->data
 1:
     beq t0, a2, 2f
     #*data = *(buff + i)
@@ -54,7 +64,7 @@ uart_write:
 
 uart_read:
     li t0, 0 #int i = 0
-    lw t1, 4(a0) #struct mmio_uart* base = &uart->base
+    lw t1, 8(a0) #struct mmio_uart* base = &uart->base
 1:
     beq t0, a2, 2f
     # if (!base->csr->rx_avail) continue

@@ -1,13 +1,13 @@
 
-ASRCS = $(wildcard *.S)
-OBJS = $(ASRCS:%.S=%.o)
+ASRCS = $(wildcard *.s)
+OBJS = $(ASRCS:%.s=%.o)
 
 CFLAGS = -O2 -march=rv32i_zicsr -mabi=ilp32 -ffreestanding -Wall -Wextra -Wno-unused-parameter -g
 ASFLAGS = -march=rv32i_zicsr -mabi=ilp32 -ffreestanding -g
 LDFLAGS = -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles -static -T ./linker.ld
 
 
-%.o: %.S
+%.o: %.s
 	riscv64-unknown-elf-gcc $(ASFLAGS) -c $< -o $@
 
 test.elf: $(OBJS)

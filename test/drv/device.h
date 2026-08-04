@@ -19,6 +19,7 @@ struct device {
     struct dev_ops* ops;
     struct device* next; //next device instance
     struct bus_device* parent;
+    dev_t devno;
 };
 
 struct bus_ops {

@@ -1,9 +1,13 @@
 /*
     handles user syscalls and dispatches the right syscall handler
 */
-.global do_syscall
 
 .section .text
+.extern kputs
+.extern kputc
+
+.global do_syscall
+
     # a0 = arg0, a7 = syscall number
 do_syscall:
     # Dispatch based on syscall number

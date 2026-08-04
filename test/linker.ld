@@ -10,6 +10,7 @@ MEMORY
 SECTIONS
 {
   .text : {
+    *(.text.start)
     *(.text*)
   } > RAM
 

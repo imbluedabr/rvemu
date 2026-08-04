@@ -1,13 +1,17 @@
-.section .text
+.section .text.start
 .global _start
+.extern kputs
 .extern user_entry
-.org 0x0000
+.extern irq_init
+.extern enter_user
 
 # props to easyriscv, modified by me
 
 _start:
     la sp, __stack_top
     
+    call irq_init
+
     #print version
     la a0, msg_version
     call kputs
@@ -32,25 +36,8 @@ _start:
 
 
 .section .data
-/*
-    struct driver {
-        int (*init)(struct device* dev, void* base)
-        int (*read)(struct device* dev, void* buff, uint32_t count)
-        int (*write)(struct device* dev, void* buff, uint32_t count)
-    }
-    
-    struct device {
-        struct driver* driver
-        void* base
-        uint32_t state[14] //each device is allocated 64 bytes
-    }
-*/
-
-
-os_tick_count:
-    .word 0
 
 msg_version:
-    .asciz "EasyRTOS v0.1.0\r\n"
+    .asciz "EasyRTOS v0.2.0\r\n"
 
 

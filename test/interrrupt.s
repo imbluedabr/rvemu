@@ -26,9 +26,13 @@ hex_chars:
     .asciz "0123456789ABCDEF"
 
 .section .text
+.extern kputs
+.extern kputc
+.extern do_syscall
+
 .global irq_init
 .global irq_register
-.extern trap_main
+.global enter_user
 
     # void irq_init()
 irq_init:
