@@ -1,7 +1,11 @@
+typedef short dev_t;
 
 struct driver {
-    struct device* (*create)(void* desc);
+    struct device* (*create)(struct bus_device* parent, void* desc);
+    int (*remove)(struct device* device);
     const char* name;
+    struct device* instance_list;
+    int instance_count;
 };
 
 struct dev_ops {
@@ -13,12 +17,12 @@ struct dev_ops {
 
 struct device {
     struct dev_ops* ops;
-    struct device* next;
+    struct device* next; //next device instance
     struct bus_device* parent;
 };
 
 struct bus_ops {
-    int (*notify)(struct bus_device* bus, int event, void* arg); //can also be an ioctl
+    //used by drivers to send or recieve over the bus
     int (*sendmsg)(struct bus_device* bus, int addr, void* buff, int count);
     int (*recievemsg)(struct bus_device* bus, int addr, void* buff, int count);
 };
@@ -26,6 +30,7 @@ struct bus_ops {
 struct bus_device {
     struct device base;
     struct bus_ops* bus_ops;
-    struct device* dev_list;
 };
+
+
 
