@@ -41,24 +41,30 @@ driver_table:
 
     # void list_drivers()
 list_drivers:
-    la t0, driver_table
-    li t1, 0 # int i = 0
-    li t3, 0
-    li t4, 4
+    addi sp, sp, -16
+    sw s0, 0(sp)
+    sw s1, 4(sp)
+    la s0, driver_table
+    li s1, 0 # int i = 0
 1:
-    beq t1, t4, 3f
+    li t0, 4
+    beq s1, t0, 3f
     # struct driver* drv = driver_table[i]
-    slli t2, t1, 4
-    add t2, t2, t0
-    lw t2, 0(t2)
-    beq t2, t3, 2f # if (drv)
+    slli t0, s1, 4
+    add t0, t0, s0
+    lw t0, 0(t0)
+    li t1, 0
+    beq t0, t1, 2f # if (drv)
     # kputs(drv->name)
-    lw a0, 12(t2)
+    lw a0, 12(t0)
     call kputs
 2:
     addi t1, t1, 1
     j 1b
 3:
+    lw s1, 4(sp)
+    lw s0, 0(sp)
+    addi sp, sp, 16
     ret
 
     # void register_driver(int major, struct driver* drv)
