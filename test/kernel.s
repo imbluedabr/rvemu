@@ -4,6 +4,7 @@
 .extern user_entry
 .extern irq_init
 .extern enter_user
+.extern uart_driver
 
 # props to easyriscv, modified by me
 
@@ -15,6 +16,14 @@ _start:
     #print version
     la a0, msg_version
     call kputs
+
+    # register_driver(0, uart_driver)
+    li a0, 0
+    la a1, uart_driver
+    call register_driver
+
+    # list_drivers()
+    call list_drivers
 
     # Reserve 256 bytes for OS stack
     # User stack starts 256 bytes lower

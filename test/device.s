@@ -18,8 +18,8 @@
         struct dev_ops* ops
         struct device* next
         void* base
-        uint8_t minor
-        uint8_t padding[51] //each device is allocated 64 bytes
+        int minor
+        uint8_t padding[48] //each device is allocated 64 bytes
     }
 */
 
@@ -154,7 +154,7 @@ device_lookup:
 1:
     beq t1, t2, 2f
     # if (dev->minor == devno)
-    lbu t3, 12(t1)
+    lw t3, 12(t1)
     beq t3, a0, 2f
     # dev = dev->next
     lw t1, 4(t1)
