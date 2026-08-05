@@ -36,7 +36,31 @@ driver_table:
 .global device_create
 .global device_lookup
 .global register_driver
-    
+.global list_drivers
+.extern kputs
+
+    # void list_drivers()
+list_drivers:
+    la t0, driver_table
+    li t1, 0 # int i = 0
+    li t3, 0
+    li t4, 4
+1:
+    beq t1, t4, 3f
+    # struct driver* drv = driver_table[i]
+    slli t2, t1, 4
+    add t2, t2, t0
+    lw t2, 0(t2)
+    beq t2, t3, 2f # if (drv)
+    # kputs(drv->name)
+    lw a0, 12(t2)
+    call kputs
+2:
+    addi t1, t1, 1
+    j 1b
+3:
+    ret
+
     # void register_driver(int major, struct driver* drv)
 register_driver:
     # driver_table[major] = drv
