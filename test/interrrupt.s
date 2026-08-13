@@ -29,6 +29,7 @@ hex_chars:
 .extern kputs
 .extern kputc
 .extern do_syscall
+.extern ready_tail
 
 .global irq_init
 .global irq_register
@@ -39,6 +40,8 @@ irq_init:
     #set mstatus.MPIE to enable interrupts
     li t0, 0x80
     csrrs t0, mstatus, t0
+    la t0, __stack_top
+    csrw mscratch, t0
 
     la t0, handler
     csrw mtvec, t0
@@ -170,45 +173,48 @@ handler:
     sw x29, 116(sp)
     sw x30, 120(sp)
     sw x31, 124(sp)
-	
-	# current_task->sp = sp
-	la t0, current_task
-	lw t0, 0(t0)
-	sw sp, 0(t0)
+    
+    # save pc
+    csrr t0, mepc
+    sw t0, 0(sp)
 
-	csrrw sp, mscratch, sp
+    # pass the user sp to trap_main
+    mv a0, sp
+
+	# save user stack pointer
+	# ready_tail->sp = sp
+	la t0, ready_tail
+	lw t0, 0(t0)
+	sw a0, 0(t0)
+
+    # load kernel stack pointer
+	csrrw sp, mscratch, zero
 
     # If mscratch was 0, this is exception from M-mode
     # Can't handle that, it's a fatal error
     beq sp, zero, fatal
-
-
-    # Save user sp, also set mscratch to 0 in M-mode
-    csrrw t0, mscratch, zero
-    sw t0, 8(sp)
-
-    # Save user pc
-    csrr t0, mepc
-    sw t0, 0(sp)
-
-    mv a0, sp
+    
     call trap_main
     # ... falls through after trap_main ...
 enter_user:
+    # save kernel sp
+    csrrw zero, mscratch, sp
+    
+    # load user stack pointer
+    # sp = ready_tail->sp
+	la t0, ready_tail
+	lw t0, 0(t0)
+	lw sp, 0(t0)
+
     # Set mstatus.MPP = User
     lui t0, %hi(0x1800)
     addi t0, t0, %lo(0x1800)
     csrrc t0, mstatus, t0
-
+    
     # Set mepc = user pc
     # Will actually jump with mret
     lw t0, 0(sp)
     csrw mepc, t0
-
-    # Set mscratch = user sp temporarily
-    # Will swap right before mret
-    lw t0, 8(sp)
-    csrw mscratch, t0
 
     # Restore other registers from stack
     lw x1, 4(sp)
@@ -244,8 +250,6 @@ enter_user:
     lw x31, 124(sp)
     addi sp, sp, 128
 
-    # Actually restore sp
-    csrrw sp, mscratch, sp
     mret    # Time to go to user mode!
 
 

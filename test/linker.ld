@@ -33,7 +33,7 @@ SECTIONS
   .stack : {
       . = ALIGN(4);
       __stack_bottom = .;
-      . += 2K;
+      . += 1K;
       __stack_top = .;
   } > RAM
 }

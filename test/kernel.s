@@ -8,9 +8,7 @@
 
 # props to easyriscv, modified by me
 
-_start:
-    la sp, __stack_top
-    
+_start:    
     call irq_init
 
     #print version
@@ -24,6 +22,7 @@ _start:
 
     # list_drivers()
     call list_drivers
+    ebreak
 
     # Reserve 256 bytes for OS stack
     # User stack starts 256 bytes lower

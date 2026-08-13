@@ -57,7 +57,7 @@ list_drivers:
     lw a0, 12(t0)
     call kputs
 2:
-    addi t1, t1, 1
+    addi s1, s1, 1
     j 1b
 3:
     lw s1, 4(sp)

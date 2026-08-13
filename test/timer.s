@@ -38,7 +38,7 @@ timer_ops:
 # void timer_create(struct device* dev, void* base, int irq)
 timer_create:
 	addi sp, sp, -16
-	sw lr, 0(sp)
+	sw ra, 0(sp)
 	# struct timer_device* timer = dev
 	# timer->dev.ops = &timer_ops
 	la t0, timer_ops
@@ -70,7 +70,7 @@ timer_create:
 	la a1, timer_handler
 	call irq_register
 	
-	lw lr, 0(sp)
+	lw ra, 0(sp)
 	addi sp, sp, 16
 	ret
 

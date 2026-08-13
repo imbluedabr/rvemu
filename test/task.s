@@ -41,9 +41,9 @@ task_create:
 	addi t1, t1, 2
 	j 1b
 2:
-	sbu t1, 12(t0)
+	sb t1, 12(t0)
 	li t1, 2
-	sbu t1, 13(t0)
+	sb t1, 13(t0)
 
 	sw a1, 0(a0)
 	sw a0, 0(t0)
@@ -65,7 +65,7 @@ task_cont:
 	
 	# t->state = 1
 	li t1, 0x01
-	sbu t1, 12(a0)
+	sb t1, 12(a0)
 	
 	# if (ready_head)
 	la t1, ready_head
