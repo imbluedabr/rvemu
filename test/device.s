@@ -2,7 +2,7 @@
 
 /*
     struct driver {
-        int (*create)(struct device* dev, void* base)
+        int (*create)(struct device* dev, void* base, int irq)
         struct device* instance_list
         int instance_count
         const char* name
@@ -11,7 +11,6 @@
     struct dev_ops {
         int (*read)(struct device* dev, void* buff, uint32_t count)
         int (*write)(struct device* dev, void* buff, uint32_t count)
-        int (*block_read)(struct device* dev, void* buff, uint32_t lba)
     }
 
     struct device {
@@ -45,7 +44,7 @@ list_drivers:
     sw s0, 0(sp)
     sw s1, 4(sp)
     la s0, driver_table
-    li s1, 0 # int i = 0
+    mv s1, zero # int i = 0
 1:
     li t0, 4
     beq s1, t0, 3f
@@ -53,8 +52,7 @@ list_drivers:
     slli t0, s1, 4
     add t0, t0, s0
     lw t0, 0(t0)
-    li t1, 0
-    beq t0, t1, 2f # if (drv)
+    beq t0, zero, 2f # if (drv)
     # kputs(drv->name)
     lw a0, 12(t0)
     call kputs
@@ -82,8 +80,7 @@ device_alloc:
 1:
     # if (p->driver == NULL)
     lw t1, 0(t0)
-    li t2, 0
-    beq t1, t2, 2f
+    beq t1, zero, 2f
     addi t0, t0, 64
     la t1, device_table_end
     beq t0, t1, 3f
@@ -94,10 +91,10 @@ device_alloc:
     ret
 3:
     # return NULL
-    li a0, 0
+    mv a0, zero
     ret
 
-    # struct device* device_create(int major, void* base)
+    # struct device* device_create(int major, void* base, int irq)
 device_create:
     addi sp, sp, -16
     sw ra, 0(sp)
@@ -114,7 +111,7 @@ device_create:
     call device_alloc
     mv s1, a0
 
-    # drv->create(dev, base)
+    # drv->create(dev, base, irq)
     lw t0, 0(s0)
     jalr ra, t0, 0
     
@@ -149,13 +146,12 @@ device_lookup:
 
     # struct device* dev = drv->instance_list
     lw t1, 4(t0)
-    li t2, 0
     # while(dev)
 1:
-    beq t1, t2, 2f
+    beq t1, zero, 2f
     # if (dev->minor == devno)
-    lw t3, 12(t1)
-    beq t3, a0, 2f
+    lw t2, 12(t1)
+    beq t2, a0, 2f
     # dev = dev->next
     lw t1, 4(t1)
     j 1b

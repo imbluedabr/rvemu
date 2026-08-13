@@ -24,13 +24,21 @@ timer_ops:
 		struct device dev;
 		int ticks;
 	}
+
+	struct mmio_timer {
+		uint32_t count;
+		uint32_t tmcr;
+		uint32_t ctrl;
+	}
 */
-	
+
 
 .section .text
 
-# void timer_driver(struct device* dev, void* base)
-timer_driver:
+# void timer_create(struct device* dev, void* base, int irq)
+timer_create:
+	addi sp, sp, -16
+	sw lr, 0(sp)
 	# struct timer_device* timer = dev
 	# timer->dev.ops = &timer_ops
 	la t0, timer_ops
@@ -43,6 +51,27 @@ timer_driver:
 	li t0, 0
 	sw t0, 16(a0)
 
+
+	# struct mmio_timer* mm = base;
+	# mm->tmcr = 1000
+	li t0, 1000
+	sw t0, 4(a1)
+	# mm->count = 0
+	li t0, 0
+	sw t0, 0(a1)
+	# mm->ctrl = 0x02
+	li t0, 0x02
+	sw t0, 8(a1)
+
+	# irq_register(irq, timer_handler, dev)
+	mv t0, a0
+	mv a0, a2
+	mv a2, t0
+	la a1, timer_handler
+	call irq_register
+	
+	lw lr, 0(sp)
+	addi sp, sp, 16
 	ret
 
 # int timer_read(struct device* timer, void* buff, int count)
@@ -57,5 +86,22 @@ timer_read:
 	li a0, 0
 	ret
 
+# int timer_write(struct device* timer, void* buff, int count)
+timer_write:
+	li t0, 4
+	bne t0, a2, 1f
+	lw t1, 0(a1)
+	sw t1, 16(a0)
+	mv a0, t0
+	ret
+1:
+	li a0, 0
+	ret
 
 
+# void timer_handler(struct device* dev)
+timer_handler:
+	lw t0, 16(a0)
+	addi t0, t0, 1
+	sw t0, 16(a0)
+	ret

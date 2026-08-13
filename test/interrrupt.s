@@ -136,16 +136,11 @@ fatal:
 
     # The big exception handler
 handler:
-    csrrw sp, mscratch, sp
-
-    # If mscratch was 0, this is exception from M-mode
-    # Can't handle that, it's a fatal error
-    beq sp, zero, fatal
 
     # Save all registers
     addi sp, sp, -128
     sw x1, 4(sp)
-    # x2/sp handled separately
+    sw x2, 8(sp)
     sw x3, 12(sp)
     sw x4, 16(sp)
     sw x5, 20(sp)
@@ -175,6 +170,18 @@ handler:
     sw x29, 116(sp)
     sw x30, 120(sp)
     sw x31, 124(sp)
+	
+	# current_task->sp = sp
+	la t0, current_task
+	lw t0, 0(t0)
+	sw sp, 0(t0)
+
+	csrrw sp, mscratch, sp
+
+    # If mscratch was 0, this is exception from M-mode
+    # Can't handle that, it's a fatal error
+    beq sp, zero, fatal
+
 
     # Save user sp, also set mscratch to 0 in M-mode
     csrrw t0, mscratch, zero
