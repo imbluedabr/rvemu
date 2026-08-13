@@ -1,5 +1,6 @@
 .section .data
-
+.global task_block
+.global ready_tail
 /*
 	struct task {
 		uint8_t* sp
@@ -23,9 +24,10 @@ ready_tail:
 
 .section .text
 .global task_create
+.global task_cont
 .global schedule_new_task
 
-# int task_create(uint8_t* sp, void* entry)
+# struct task* task_create(uint8_t* sp, void* entry)
 task_create:
 	csrrci zero, mstatus, 0x8
 	la t0, task_block
@@ -40,7 +42,7 @@ task_create:
 	j 1b
 2:
 	sbu t1, 12(t0)
-	li t1, 1
+	li t1, 2
 	sbu t1, 13(t0)
 
 	sw a1, 0(a0)
@@ -52,20 +54,18 @@ task_create:
 	mv a0, t0
 	ret
 3:
+	csrrsi zero, mstatus, 0x8
 	mv a0, zero
 	ret
 
 
-# void task_cont(int tid)
+# void task_cont(struct task* t)
 task_cont:
-	# struct task* t = &task_block[tid]
-	slli a0, a0, 4
-	la t0, task_block
-	add t0, t0, a0
-
+	csrrci zero, mstatus, 0x8
+	
 	# t->state = 1
 	li t1, 0x01
-	sbu t1, 12(t0)
+	sbu t1, 12(a0)
 	
 	# if (ready_head)
 	la t1, ready_head
@@ -73,15 +73,34 @@ task_cont:
 	beq t2, zero, 1f
 
 	# ready_head->ready_next = t
-	sw t0, 4(t2)
+	sw a0, 4(t2)
 	# ready_head = t
-	sw t0, 0(t1)
+	sw a0, 0(t1)
 	j 2f
 1:
 	# ready_head = t
-	sw t0, 0(t1)
+	sw a0, 0(t1)
 	# ready_tail = t
 	la t1, ready_tail
-	sw t0, 0(t1)
+	sw a0, 0(t1)
 2:
+	csrrsi zero, mstatus, 0x8
 	ret
+
+# void schedule_new_task()
+schedule_new_task:
+	# struct task* t = read_tail
+	la t0, ready_tail
+	lw t1, 0(t0)
+	# ready_tail = t->ready_next
+	lw t2, 4(t1)
+	sw t2, 0(t0)
+	# ready_head->ready_next = t
+	la t0, ready_head
+	lw t2, 0(t0)
+	sw t1, 4(t2)
+	# ready_head = t
+	sw t1, 0(t0)
+	ret
+
+
