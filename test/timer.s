@@ -35,7 +35,7 @@ timer_ops:
 
 .section .text
 
-# void timer_create(struct device* dev, void* base, int irq)
+	# void timer_create(struct device* dev, void* base, int irq)
 timer_create:
 	addi sp, sp, -16
 	sw ra, 0(sp)
@@ -74,7 +74,7 @@ timer_create:
 	addi sp, sp, 16
 	ret
 
-# int timer_read(struct device* timer, void* buff, int count)
+	# int timer_read(struct device* timer, void* buff, int count)
 timer_read:
 	li t0, 4
 	bne t0, a2, 1f
@@ -86,7 +86,7 @@ timer_read:
 	li a0, 0
 	ret
 
-# int timer_write(struct device* timer, void* buff, int count)
+	# int timer_write(struct device* timer, void* buff, int count)
 timer_write:
 	li t0, 4
 	bne t0, a2, 1f
@@ -99,7 +99,7 @@ timer_write:
 	ret
 
 
-# void timer_handler(struct device* dev)
+	# void timer_handler(struct device* dev)
 timer_handler:
 	lw t0, 16(a0)
 	addi t0, t0, 1
