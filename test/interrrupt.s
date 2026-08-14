@@ -40,8 +40,8 @@ irq_init:
     #set mstatus.MPIE to enable interrupts
     li t0, 0x80
     csrrs t0, mstatus, t0
-    la t0, __stack_top
-    csrw mscratch, t0
+    la sp, __stack_top
+    csrw mscratch, sp
 
     la t0, handler
     csrw mtvec, t0
