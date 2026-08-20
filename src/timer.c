@@ -43,9 +43,9 @@ void SysTickTimer_init(SysTickTimer* this, MainBus* _MainBus) {
 void SysTickTimer_tick(SysTickTimer* this) {
     if (this->ctrl & SYSTICK_E) {
         this->count++;
-        if (this->ctrl & SYSTICK_TCI && this->count == this->tmcr) {
+        if ((this->ctrl & SYSTICK_TCI) && (this->count > this->tmcr)) {
             this->count = 0;
-            CPU_interrupt_fast(this->_BusDevice._MainBus->cpu, 0);
+            CPU_interrupt_fast(this->_BusDevice._MainBus->cpu, 1);
         }
     }
 }

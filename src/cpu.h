@@ -3,7 +3,6 @@
 
 #define MODE_M 3
 #define MODE_U 0
-#define MODE_D 2
 
 #define FAULT_IACCESS 1
 #define FAULT_ILLINSTR 2
@@ -51,6 +50,8 @@ typedef struct CPU {
     uint32_t pc;
     uint8_t trap_pending;
     uint8_t mode;
+    uint8_t debug_mode;
+    uint32_t pending_cause;
 
     uint32_t csr_mstatus;
     uint32_t csr_misa;

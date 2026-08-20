@@ -68,27 +68,24 @@ static inline uint32_t csr_read(CPU* cpu, uint32_t csr) {
 }
 
 void CPU_exception(CPU* cpu, uint8_t exception, uint32_t mtval) {
-    if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
-        DebugModule_sendHalt(cpu->system_bus->dbg, 1);
-    }
-    cpu->csr_mcause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
+    cpu->pending_cause = MCAUSE_CODE(exception) | MCAUSE_INTR(0);
     cpu->csr_mtval = mtval;
     cpu->trap_pending = 1;
 }
 
 void CPU_interrupt_fast(CPU* cpu, uint8_t irq) {
-    if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
-        DebugModule_sendHalt(cpu->system_bus->dbg, 1);
-    }
-    cpu->csr_mcause = MCAUSE_CODE(irq + 16) | MCAUSE_INTR(1);
+    cpu->pending_cause = MCAUSE_CODE(irq + 16) | MCAUSE_INTR(1);
     cpu->csr_mip |= MIP_FAST_IRQ(1 << irq);
 }
 
 void CPU_iret(CPU* cpu) {
+
     cpu->mode = MSTATUS_GETMPP(cpu->csr_mstatus);
     cpu->csr_mstatus &= ~MSTATUS_MPP_MSK;
-    if (cpu->csr_mstatus & MSTATUS_MPIE(1))
+
+    if (cpu->csr_mstatus & MSTATUS_MPIE(1)) {
         cpu->csr_mstatus |= MSTATUS_MIE(1);
+    }
     cpu->pc = cpu->csr_mepc;
 }
 
@@ -99,6 +96,7 @@ void CPU_handleTrap(CPU* cpu) {
     cpu->csr_mstatus &= ~MSTATUS_MIE(1);
     cpu->csr_mstatus &= ~MSTATUS_MPP_MSK;
     cpu->csr_mstatus |= MSTATUS_MPP(cpu->mode);
+    cpu->csr_mcause = cpu->pending_cause;
     cpu->mode = MODE_M;
     cpu->csr_mepc = cpu->pc;
     cpu->pc = cpu->csr_mtvec;
@@ -113,11 +111,19 @@ static void CPU_checkInterrupts(CPU* cpu) {
 
     if (cpu->trap_pending) {
         cpu->trap_pending = 0;
+        if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
+            DebugModule_sendHalt(cpu->system_bus->dbg, 1);
+        }
+
         CPU_handleTrap(cpu);
     } else if (cpu->csr_mstatus & MSTATUS_MIE(1)) {
         for (int i = 0; i < 16; i++) {
             if (cpu->csr_mie & MIE_FAST_IRQ(i) && cpu->csr_mip & MIP_FAST_IRQ(i)) {
-                cpu->csr_mip &= ~MIP_FAST_IRQ(1);
+                cpu->csr_mip &= ~MIP_FAST_IRQ(i);
+                if (cpu->csr_dcsr & DCSR_VCATCH(1)) {
+                    DebugModule_sendHalt(cpu->system_bus->dbg, 1);
+                }
+
                 CPU_handleTrap(cpu);
                 break;
             }
@@ -126,7 +132,7 @@ static void CPU_checkInterrupts(CPU* cpu) {
 }
 
 void CPU_tick(CPU* cpu) {
-    if (cpu->mode == MODE_D) return;
+    if (cpu->debug_mode) return;
     Bus* bus = &cpu->system_bus->_Bus;
     uint32_t instruction;
     uint32_t temp;
@@ -244,16 +250,16 @@ void CPU_tick(CPU* cpu) {
         case 0b1110011:
             if (funct3 > 0) {
                 temp = 0;
-                if (rd) temp = csr_read(cpu, i_imm);
+                if (rd || funct3 != 1) temp = csr_read(cpu, i_imm);
             }
 
             switch (funct3) {
                 case 0b000:
                     if (rs2 == 0) { //ECALL
                         if (cpu->mode == MODE_M) {
-                            CPU_exception(cpu, FAULT_MCALL, 0);
+                            return CPU_exception(cpu, FAULT_MCALL, 0);
                         } else if (cpu->mode == MODE_U) {
-                            CPU_exception(cpu, FAULT_UCALL, 0);
+                            return CPU_exception(cpu, FAULT_UCALL, 0);
                         } else {
                             return CPU_exception(cpu, FAULT_ILLINSTR, instruction);
                         }

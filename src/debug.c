@@ -65,7 +65,6 @@ bfd_vma line_to_addr(DebugModule* dbg, const char *file, unsigned int target_lin
 
             if (bfd_find_nearest_line(dbg->abfd, sec, dbg->syms,
                                       addr, &srcfile, &func, &line)) {
-
                 if (srcfile && strcmp(srcfile, file) == 0 &&
                     line == target_line) {
                     return addr;
@@ -100,7 +99,7 @@ void DebugModule_sendHalt(DebugModule* dbg, int cause) {
     cpu->csr_dpc = cpu->pc;
     cpu->csr_dcsr &= ~(DCSR_CAUSE_MSK | DCSR_PRV_MSK);
     cpu->csr_dcsr |= DCSR_CAUSE(cause) | DCSR_PRV(cpu->mode);
-    cpu->mode = MODE_D;
+    cpu->debug_mode = 1;
     printf("rvemu: halting core\r\n");
 }
 
@@ -136,8 +135,8 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
         case DBG_INFO:
             printf("registers: ");
             for (int i = 0; i < 32; i++) printf("x%d=%d, ", i, cpu->registers[i]);
-            printf("pc=%d\r\n", cpu->pc);
-            printf("csr: mstatus=%d, mtvec=%d, mepc=%d, mcause=%d\n", cpu->csr_mstatus, cpu->csr_mtvec, cpu->csr_mepc, cpu->csr_mcause);
+            printf("pc=0x%x\r\n", cpu->pc);
+            printf("csr: mstatus=%d, mtvec=0x%x, mepc=0x%x, mcause=%d, mip=%d\n", cpu->csr_mstatus, cpu->csr_mtvec, cpu->csr_mepc, cpu->csr_mcause, cpu->csr_mip);
             break;
         case DBG_LINE:
             {
@@ -164,11 +163,13 @@ void DebugModule_sendCmd(DebugModule* dbg, DbgCmd cmd, ...) {
         case DBG_STEP:
             cpu->csr_dcsr |= DCSR_STEP(1);
             cpu->mode = DCSR_GETPRV(cpu->csr_dcsr);
+            cpu->debug_mode = 0;
             cpu->pc = cpu->csr_dpc;
             break;
         case DBG_CONTINUE:
             cpu->csr_dcsr &= ~DCSR_STEP(1);
             cpu->mode = DCSR_GETPRV(cpu->csr_dcsr);
+            cpu->debug_mode = 0;
             cpu->pc = cpu->csr_dpc;
             break;
         case DBG_SKIP:
@@ -253,7 +254,7 @@ void DebugModule_shell(DebugModule* dbg) {
             }
         } else if (strcmp(arg_vec[0], "line") == 0) {
             if (argc == 1) {
-                DebugModule_sendCmd(dbg, DBG_LINE, dbg->systemBus->cpu->pc);
+                DebugModule_sendCmd(dbg, DBG_LINE, dbg->systemBus->cpu->csr_dpc);
             } else if (argc == 2) {
                 DebugModule_sendCmd(dbg, DBG_LINE, atoi(arg_vec[1]));
             } else {
@@ -261,6 +262,14 @@ void DebugModule_shell(DebugModule* dbg) {
             }
         } else if (strcmp(arg_vec[0], "info") == 0) {
             DebugModule_sendCmd(dbg, DBG_INFO);
+        } else if (strcmp(arg_vec[0], "vret") == 0) {
+            DebugModule_sendCmd(dbg, DBG_LINE, dbg->systemBus->cpu->csr_mepc);
+        } else if (strcmp(arg_vec[0], "address") == 0) {
+            if (argc != 2) {
+                printf("address: invalid argument(s)\n");
+            } else {
+                printf("address: 0x%lx\n", symbol_to_addr(dbg, arg_vec[1]));
+            }
         } else {
             printf("rvemu: %s: unkown debug command\n", arg_vec[0]);
         }
@@ -269,8 +278,15 @@ void DebugModule_shell(DebugModule* dbg) {
 
 void DebugModule_tick(DebugModule* dbg) {
     CPU* hart0 = dbg->systemBus->cpu;
-    
-    if (hart0->mode == MODE_D) {
+
+    for (int i = 0; i < BKPT_LEN; i++) {
+        if (dbg->breakpoint[i] != 0 && dbg->breakpoint[i] == hart0->pc) {
+            printf("hit breakpoint %d\r\n", i);
+            DebugModule_sendHalt(dbg, 2);
+        }
+    }
+
+    if (hart0->debug_mode) {
         
         struct termios t, old;
         tcgetattr(STDIN_FILENO, &t);
@@ -285,19 +301,13 @@ void DebugModule_tick(DebugModule* dbg) {
         tcsetattr(STDIN_FILENO, TCSANOW, &t);
 
         setvbuf(stdout, NULL, _IONBF, 0);
-        printf("dcsr.cause: %s, pc: 0x%x, mcause{code: %d, int: %d}, mtval: 0x%x\n", dcsr_causes[DCSR_GETCAUSE(hart0->csr_dcsr)], hart0->pc, hart0->csr_mcause & MCAUSE_CODE_MSK, hart0->csr_mcause & MCAUSE_INTR(1), hart0->csr_mtval);
+        printf("mode: %d, dcsr.cause: %s, pc: 0x%x, mcause{code: %d, int: %d}, mtval: 0x%x\n", hart0->mode, dcsr_causes[DCSR_GETCAUSE(hart0->csr_dcsr)], hart0->pc, hart0->csr_mcause & MCAUSE_CODE_MSK, (hart0->csr_mcause & MCAUSE_INTR(1)) >> 31, hart0->csr_mtval);
         DebugModule_sendCmd(dbg, DBG_LINE, hart0->pc);        
         DebugModule_shell(dbg);
         
         tcsetattr(STDIN_FILENO, TCSANOW, &old);
     }
 
-    for (int i = 0; i < BKPT_LEN; i++) {
-        if (dbg->breakpoint[i] != 0 && dbg->breakpoint[i] == hart0->pc) {
-            printf("hit breakpoint %d\r\n", i);
-            DebugModule_sendHalt(dbg, 2);
-        }
-    }
 }
 
 
