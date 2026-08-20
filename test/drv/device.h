@@ -1,3 +1,7 @@
+/*
+ * ignore everything in this file, this is just an idea for a better device driver infra
+ */
+
 typedef short dev_t;
 
 struct driver {
