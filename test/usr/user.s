@@ -26,25 +26,12 @@ timer_val:
 .extern exit
 
 user_entry:
-    /*
-    li a0, 'A'
-    li a7, 5
-    ecall
-    ebreak
-    li a0, 'B'
-    li a7, 5
-    ecall
-    ebreak
-    */
     
     la a0, msg_hello
     call puts
     
-    # int tty = opendev(MKDEV(0, 0))
+    # write(0, "Yeet\r\n", 6)
     li a0, 0
-    call opendev
-    
-    # write(tty, "Yeet\r\n", 6)
     la a1, msg_yeet
     li a2, 6
     call write
@@ -58,7 +45,7 @@ user_entry:
     li a2, 4
     call read
 
-    # printf("tmr_count: %d\r\n")
+    # printf("tmr_count: %x\r\n")
     la a0, msg_tmr
     la a1, timer_val
     lw a1, 0(a1)
