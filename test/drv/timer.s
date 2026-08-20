@@ -61,7 +61,7 @@ timer_create:
 	
 	# struct mmio_timer* mm = base;
 	# mm->tmcr = 1000
-	li t0, 1000
+	li t0, 2000
 	sw t0, 4(a1)
 	# mm->count = 0
 	li t0, 0
