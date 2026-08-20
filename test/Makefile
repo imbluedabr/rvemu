@@ -1,5 +1,5 @@
 
-ASRCS = $(wildcard *.s)
+ASRCS = $(wildcard sys/*.s) $(wildcard drv/*.s) $(wildcard usr/*.s)
 OBJS = $(ASRCS:%.s=%.o)
 
 CFLAGS = -O2 -march=rv32i_zicsr -mabi=ilp32 -ffreestanding -Wall -Wextra -Wno-unused-parameter -g
