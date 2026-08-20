@@ -1,4 +1,9 @@
 .section .data
+.global boot_console
+
+boot_console:
+    .word 0
+
 hex_chars:
     # "0123456789abcdef"
     .asciz "0123456789ABCDEF"
@@ -9,24 +14,56 @@ hex_chars:
 .global kputh
 .global kprintf
 
-    # void kputs(const char *);
-    # Print string by accessing MMIO directly
-kputs:
-    lui t1, %hi(0x8000)
+    # int strlen(const char* str)
+strlen:
+    mv t0, a0
 1:
-    lb t0, 0(a0)
-    beq t0, zero, 2f
-    sb t0, 0(t1)
-    addi a0, a0, 1
+    lbu t1, 0(t0)
+    beq t1, zero, 2f
+    addi t0, t0, 1
     j 1b
 2:
+    sub a0, t0, a0
     ret
 
-    # void kputc(char);
+    # void kputs(const char * str);
+    # Print string by accessing MMIO directly
+kputs:
+    addi sp, sp, -16
+    sw ra, 0(sp)
+    
+    # boot_console->ops->write(boot_console, str, strlen(str))
+    mv a1, a0
+    call strlen
+    mv a2, a0
+    la a0, boot_console
+    lw a0, 0(a0)
+    lw t0, 0(a0)
+    lw t0, 4(t0)
+    jalr ra, t0, 0
+
+    lw ra, 0(sp)
+    addi sp, sp, 16
+    ret
+
+    # void kputc(char c);
     # Print byte by accessing MMIO directly
 kputc:
-    lui t1, %hi(0x8000)
-    sb a0, (t1)
+    addi sp, sp, -16
+    sw ra, 0(sp)
+    sw a0, 4(sp)
+    
+    # boot_console->ops->write(boot_console, &c, 1)
+    la a0, boot_console
+    lw a0, 0(a0)
+    addi a1, sp, 4
+    li a2, 1
+    lw t0, 0(a0)
+    lw t0, 4(t0)
+    jalr ra, t0, 0
+
+    lw ra, 0(sp)
+    addi sp, sp, 16
     ret
 
     # void kputh(int num)
@@ -57,19 +94,20 @@ kputh:
     addi sp, sp, 16
     ret
 
-    # void kprintf(const char* fmt, a1, a2, a3)
+    # void kprintf(const char* fmt, a1, a2, a3, a4)
 kprintf:
     addi sp, sp, -32
     sw ra, 16(sp)
     sw s0, 20(sp)
     sw s1, 24(sp)
     mv s0, a0
+    mv s1, sp
 
     #push arguments
     sw a1, 0(sp)
     sw a2, 4(sp)
     sw a3, 8(sp)
-    mv s1, sp
+    sw a4, 12(sp)
     
     # while (*fmt)
 1:
@@ -109,6 +147,7 @@ kprintf:
     addi s0, s0, 1
     j 1b
 7:
+    lw s1, 24(sp)
     lw s0, 20(sp)
     lw ra, 16(sp)
     addi sp, sp, 32
