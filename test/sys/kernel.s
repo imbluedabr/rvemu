@@ -1,6 +1,6 @@
 .section .data
 msg_version:
-    .asciz "EasyRTOS v0.4.1\r\n"
+    .asciz "EasyRTOS v1.0.0\r\n"
 
 .section .text.start
 .global _start
@@ -17,6 +17,7 @@ msg_version:
 .extern task_view
 .extern task_create
 .extern schedule_new_task
+.extern file_alloc
 .extern user_stack
 .extern user_entry
 .extern bg_task_stack
@@ -55,12 +56,16 @@ _start:
     la t0, boot_console
     sw a0, 0(t0)
 
+    # file_alloc(boot_console)
+    call file_alloc
+
     # print version
     la a0, msg_version
     call kputs
 
     # list_drivers()
     call list_drivers
+
 
     # struct task* t0 = task_create(user_stack + 256, user_entry)
     la a0, user_stack
