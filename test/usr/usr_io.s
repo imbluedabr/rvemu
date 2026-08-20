@@ -17,6 +17,17 @@ hex_chars:
 .global close
 .global exit
 
+    # int strlen(const char* str)
+strlen:
+    mv t0, a0
+1:
+    lbu t1, 0(t0)
+    beq t1, zero, 2f
+    addi t0, t0, 1
+    j 1b
+2:
+    sub a0, t0, a0
+    ret
 
     # void putc(const char *);
     # write a byte to the boot console
@@ -25,24 +36,20 @@ putc:
     ecall
     ret
 
-    # void puts(const char *);
+    # void puts(const char * str);
     # Print string using system call
 puts:
     addi sp, sp, -16
-    sw s0, (sp)
-    sw ra, 4(sp)
+    sw ra, 0(sp)
 
-    mv s0, a0
-1:
-    lb a0, 0(s0)
-    beq a0, zero, 2f
-    call putc
-    addi s0, s0, 1
-    j 1b
-2:
+    # write(0, str, strlen(str))
+    mv a1, a0
+    call strlen
+    mv a2, a0
+    mv a0, zero
+    call write
 
-    lw s0, (sp)
-    lw ra, 4(sp)
+    lw ra, 0(sp)
     addi sp, sp, 16
     ret
 
