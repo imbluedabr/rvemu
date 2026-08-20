@@ -23,6 +23,7 @@ timer_ops:
 	struct timer_device {
 		struct device dev;
 		int ticks;
+		void (*handler)()
 	}
 
 	struct mmio_timer {
@@ -34,6 +35,13 @@ timer_ops:
 
 
 .section .text
+.global timer_set_handler
+
+	# void timer_set_handler(struct timer_device* tmr, void (*handler)())
+timer_set_handler:
+	# tmr->handler = handler
+	sw a1, 20(a0)
+	ret
 
 	# void timer_create(struct device* dev, void* base, int irq)
 timer_create:
@@ -50,8 +58,7 @@ timer_create:
 	# timer->ticks = 0
 	li t0, 0
 	sw t0, 16(a0)
-
-
+	
 	# struct mmio_timer* mm = base;
 	# mm->tmcr = 1000
 	li t0, 1000
@@ -59,8 +66,8 @@ timer_create:
 	# mm->count = 0
 	li t0, 0
 	sw t0, 0(a1)
-	# mm->ctrl = 0x02
-	li t0, 0x02
+	# mm->ctrl = 0x03
+	li t0, 0x03
 	sw t0, 8(a1)
 
 	# irq_register(irq, timer_handler, dev)
@@ -99,9 +106,21 @@ timer_write:
 	ret
 
 
-	# void timer_handler(struct device* dev)
+	# void timer_handler(struct timer_device* tmr)
 timer_handler:
+	addi sp, sp, -16
+	sw ra, 0(sp)
+
 	lw t0, 16(a0)
 	addi t0, t0, 1
 	sw t0, 16(a0)
+	
+	# if (tmr->handler) tmr->handler()
+	lw t0, 20(a0)
+	beq t0, zero, 1f
+	jalr ra, t0, 0
+1:
+
+	lw ra, 0(sp)
+	addi sp, sp, 16
 	ret
