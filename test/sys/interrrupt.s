@@ -17,9 +17,11 @@ msg_exception:
     # "Exception 0x"
     .asciz "Exception 0x"
 
-msg_fatal:
+msg_fatal_noproc:
     # "Fatal exception\n"
-    .asciz "Fatal exception\r\n"
+    .asciz "Fatal: no active process\r\n"
+msg_fatal_mexc:
+    .asciz "Fatal: exception in M-mode\r\n"
 
 hex_chars:
     # "0123456789abcdef"
@@ -28,8 +30,9 @@ hex_chars:
 .section .text
 .extern kputs
 .extern kputc
-.extern do_syscall
+.extern syscall_handler
 .extern ready_tail
+.extern schedule_new_task
 
 .global irq_init
 .global irq_register
@@ -37,7 +40,7 @@ hex_chars:
 
     # void irq_init()
 irq_init:
-    #set mstatus.MPIE to enable interrupts
+    # set mstatus.MPIE to enable interrupts
     li t0, 0x80
     csrrs t0, mstatus, t0
     la sp, __stack_top
@@ -49,12 +52,16 @@ irq_init:
 
     # void irq_register(int irq, void (*handler)(), struct device* dev)
 irq_register:
-    #irq_table[irq] = handler
+    # MIE |= 0x10000 << irq
+    li t0, 0x10000
+    sll t0, t0, a0
+    csrrs zero, mie, t0
+    # irq_table[irq] = handler
     slli a0, a0, 2
     la t0, irq_table
     add t0, t0, a0
     sw a1, 0(t0)
-    #irq_device_table[irq] = dev
+    # irq_device_table[irq] = dev
     la t0, irq_device_table
     add t0, t0, a0
     sw a2, 0(t0)
@@ -68,38 +75,70 @@ trap_main:
     sw ra, 4(sp)
 
     mv s0, a0
-    csrr a1, mcause
+    csrr t0, mcause
+    li t1, 11 # Environment call from User mode
+    beq t0, t1, trap_mcall
     li t1, 8 # "Environment call from User mode"
-    beq a1, t1, trap_ecall
-    li t1, 0x10000000 # int bit set
-    and a1, a1, t1
-    beq a1, t1, trap_irq
+    beq t0, t1, trap_ucall
+    li t1, 0x80000000 # int bit set
+    and t2, t0, t1
+    beq t2, t1, trap_irq
     j do_bad_exception # unhandled exception
 
 trap_irq:
+    andi t0, t0, 0x1F
+    addi t0, t0, -16
+    slli t0, t0, 2
+    la t1, irq_device_table
+    add t1, t1, t0
+    lw a0, 0(t1)
+    la t1, irq_table
+    add t1, t1, t0
+    lw t1, 0(t1)
+    jalr ra, t1, 0
+
     j trap_main_exit
 
-trap_ecall:
-    # Call do_syscall with args from ecall
+trap_ucall:
+    # ready_tail->save_pc = regs->pc
+    la t0, ready_tail
+    lw t0, 0(t0)
+    lw t1, 0(s0)
+    sw t1, 12(t0)
 
-    lw a0, 40(s0)
-    lw a1, 44(s0)
-    lw a2, 48(s0)
-    lw a3, 52(s0)
-    lw a4, 56(s0)
-    lw a5, 60(s0)
-    lw a6, 64(s0)
-    lw a7, 68(s0)
-    call do_syscall
+    # ready_tail->mode = KERNEL
+    li t1, 3
+    sb t1, 18(t0)
 
-    sw a0, 40(s0)   # Set user a0 return value
+    # regs->pc = syscall_handler
+    la t1, syscall_handler
+    sw t1, 0(s0)
+    j trap_main_exit
+
+trap_mcall:
+    # regs->pc = ready_tail->save_pc
+    la t0, ready_tail
+    lw t0, 0(t0)
+    lw t1, 12(t0)
+    sw t1, 0(s0)
+    # ready_tail->save_pc = NULL
+    sw zero, 12(t0)
+    
+    # ready_tail->mode = USER
+    sb zero, 18(t0)
+    
+    # if (ready_tail->state == ZOMBIE) schedule_new_task()
+    lbu t1, 17(t0)
+    bne t1, zero, 1f
+    call schedule_new_task
+1:
 
     # Bump user pc by 4
     # Skip over ecall instruction
     lw t0, 0(s0)
     addi t0, t0, 4
     sw t0, 0(s0)
-
+    
 trap_main_exit:
     # Restore regs based on calling convention
     lw s0, (sp)
@@ -110,7 +149,7 @@ trap_main_exit:
     # [[noreturn]] void do_bad_exception(struct regs *regs, long cause)
     # Print message about bad U-mode exception, then stop
 do_bad_exception:
-    mv s0, a1
+    mv s0, t0
 
     # Equivalent of printf("Exception 0x%x", cause);
     la a0, msg_exception
@@ -120,20 +159,24 @@ do_bad_exception:
     la t0, hex_chars
     add t0, t0, a0
     lbu a0, (t0)
-    call kputchar
+    call kputc
 
     li a0, 0xD # '\r'
-    call kputchar
+    call kputc
     li a0, 0xA # '\n'
-    call kputchar
+    call kputc
 
     # Stop the emulator
     ebreak
 
 
-fatal:
+fatal_noproc:
     # Print message about fatal exception, then stop
-    la a0, msg_fatal
+    la a0, msg_fatal_noproc
+    call kputs
+    ebreak
+fatal_mexc:
+    la a0, msg_fatal_mexc
     call kputs
     ebreak
 
@@ -182,9 +225,11 @@ handler:
     mv a0, sp
 
 	# save user stack pointer
-	# ready_tail->sp = sp
+    # if (!ready_tail)
 	la t0, ready_tail
 	lw t0, 0(t0)
+    beq t0, zero, fatal_noproc
+	# ready_tail->sp = sp
 	sw a0, 0(t0)
 
     # load kernel stack pointer
@@ -192,7 +237,7 @@ handler:
 
     # If mscratch was 0, this is exception from M-mode
     # Can't handle that, it's a fatal error
-    beq sp, zero, fatal
+    beq sp, zero, fatal_mexc
     
     call trap_main
     # ... falls through after trap_main ...
@@ -204,18 +249,20 @@ enter_user:
     # sp = ready_tail->sp
 	la t0, ready_tail
 	lw t0, 0(t0)
+    beq t0, zero, fatal_noproc
 	lw sp, 0(t0)
 
-    # Set mstatus.MPP = User
-    lui t0, %hi(0x1800)
-    addi t0, t0, %lo(0x1800)
-    csrrc t0, mstatus, t0
-    
+    # Set mstatus.MPP = ready_tail->mode
+    li t1, 0x1800
+    csrrc zero, mstatus, t1
+    lbu t1, 18(t0)
+    slli t1, t1, 11
+    csrrs zero, mstatus, t1
+
     # Set mepc = user pc
     # Will actually jump with mret
     lw t0, 0(sp)
     csrw mepc, t0
-
     # Restore other registers from stack
     lw x1, 4(sp)
     # x2/sp handled separately
