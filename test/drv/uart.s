@@ -28,12 +28,15 @@ uart_ops:
 
     struct uart_device {
         struct device dev
+        spinlock_t lock
     }
 */
 
 .section .text
 .extern irq_register
 .extern irq_device_table
+.extern spinlock_lock
+.extern spinlock_unlock
 
     # void uart_create(struct device* uart, void* base)
 uart_create:
@@ -43,24 +46,48 @@ uart_create:
 
     #uart->base = base
     sw a1, 8(a0)
-
     
+    # uart->lock = 0
+    sb zero, 16(a0)
+
     ret
 
     # int uart_write(struct device* uart, void* buff, uint32_t count)
 uart_write:
+    addi sp, sp, -16
+    sw ra, 0(sp)
+    sw s0, 4(sp)
+    sw s1, 8(sp)
+    sw s2, 12(sp)
+    mv s0, a0
+    mv s1, a1
+    mv s2, a2
+
+    # spinlock_lock(&uart->lock)
+    addi a0, s0, 16
+    call spinlock_lock
+
+    lw t1, 8(s0) #char* data = &uart->dev.data
     li t0, 0 #int i = 0
-    lw t1, 8(a0) #char* data = &uart->base.data
 1:
-    beq t0, a2, 2f
+    beq t0, s2, 2f
     #*data = *(buff + i)
-    add t2, a1, t0
+    add t2, s1, t0
     lb t3, 0(t2)
     sb t3, 0(t1)
     #i++
     addi t0, t0, 1
     j 1b
 2:
+    # spinlock_unlock(&uart->lock)
+    addi a0, s0, 16
+    call spinlock_unlock
+
+    lw s2, 12(sp)
+    lw s1, 8(sp)
+    lw s0, 4(sp)
+    lw ra, 0(sp)
+    addi sp, sp, 16
     ret
 
 uart_read:
