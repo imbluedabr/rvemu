@@ -43,13 +43,14 @@ uart_create:
 
     #uart->base = base
     sw a1, 8(a0)
+
     
     ret
 
     # int uart_write(struct device* uart, void* buff, uint32_t count)
 uart_write:
     li t0, 0 #int i = 0
-    lw t1, 8(a0) #char* data = &uart->base->data
+    lw t1, 8(a0) #char* data = &uart->base.data
 1:
     beq t0, a2, 2f
     #*data = *(buff + i)
