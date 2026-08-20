@@ -44,6 +44,7 @@ str_5:
 .section .text
 .global task_view
 .global task_create
+.global task_stop
 .global task_cont
 .global task_kill
 .global schedule_new_task
@@ -128,8 +129,26 @@ task_create:
 	ret
 
 
-
+	# void task_stop()
+task_stop:
+	csrrci t4, mstatus, 0x8
 	
+	# ready_tail->status = WAITING
+	la t0, ready_tail
+	lw t0, (t0)
+	li t1, 2
+	sb t1, 17(t0)
+
+	csrrw zero, mstatus, t4
+
+	# stopgap measure until i finish the CLINT + PLIC
+	# while(ready_tail->status == WAITNG)
+	li t2, 2
+1:
+	lbu t1, 17(t0)
+	beq t1, t2, 1b
+	ret
+
 	# void task_cont(struct task* t)
 task_cont:
 	csrrci t4, mstatus, 0x8
